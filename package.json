@@ -1,0 +1,24 @@
+{
+  "name": "isecure-js-client",
+  "version": "0.0.1",
+  "description": "ISECure JS/TS Client",
+  "main": "index.js",
+  "license": "MIT",
+  "engines": {
+    "node": "18"
+  },
+  "scripts": {
+    "prestart": "tsc",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "node-fetch": "2",
+    "ts-node": "^10.9.1"
+  },
+  "devDependencies": {
+    "@types/axios": "^0.14.0",
+    "@types/node": "^18.15.3",
+    "@types/node-fetch": "2.x",
+    "typescript": "^5.0.2"
+  }
+}
