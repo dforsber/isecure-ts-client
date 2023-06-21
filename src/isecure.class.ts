@@ -23,7 +23,7 @@ export class WSChannel {
   private getChUrl = () => encodeURI(this.props.BaseUrl + `/account/${this.props.Email}/${this.props.Mode}`);
   private registerUrl = () => encodeURI(this.props.BaseUrl + `/account/${this.props.Email}/${this.props.Mode}`);
   private getloginChUrl = () => encodeURI(this.props.BaseUrl + `/session/${this.props.Email}/${this.props.Mode}`);
-  private uploadFileUrl = () => encodeURI(this.props.BaseUrl + `/files/${this.props.Bank}`);
+  private filesUrl = () => encodeURI(this.props.BaseUrl + `/files/${this.props.Bank}`);
   private verifyPhoneUrl = () => encodeURI(this.registerUrl() + "/" + this.props.Phone);
   private loginUrl = () => this.getloginChUrl();
   private loginMFAUrl = () => this.loginUrl() + "/mfacode";
@@ -50,14 +50,14 @@ export class WSChannel {
   }
 
   private async getRegChallenge(): Promise<string> {
-    const resp = await axios.get(this.getChUrl(), { method: "get" });
+    const resp = await axios.request({ url: this.getChUrl(), method: "get" });
     const challenge = resp.data.Challenge;
     this.logger.debug({ getChUrl: this.getChUrl(), challenge });
     return challenge;
   }
 
   private async getSessChallenge(): Promise<string> {
-    const resp = await axios.get<any>(this.getloginChUrl(), { method: "get" });
+    const resp = await axios.request<any>({ url: this.getloginChUrl(), method: "get" });
     const challenge = resp.data.Challenge;
     this.logger.debug({ getSessChUrl: this.getloginChUrl(), challenge });
     return challenge;
@@ -67,7 +67,7 @@ export class WSChannel {
     let headers = {};
     if (this.IdToken) headers = { ...headers, Authorization: this.IdToken };
     if (this.ApiKey) headers = { ...headers, "x-api-key": this.ApiKey };
-    headers = { headers: { ...this.headers, ...headers } };
+    headers = { ...this.headers, ...headers };
     this.logger.debug(headers);
     return headers;
   }
@@ -99,7 +99,12 @@ export class WSChannel {
     };
     const url = this.registerUrl();
     this.logger.debug({ url, body: data });
-    const registerResp = await axios.put(url, JSON.stringify(data), this.getHeaders());
+    const registerResp = await axios.request({
+      method: "put",
+      url,
+      data: JSON.stringify(data),
+      headers: this.getHeaders(),
+    });
     this.logger.debug({ registerResp: registerResp.data });
   }
 
@@ -152,7 +157,14 @@ export class WSChannel {
     const ChResp = await this.getSessChallenge();
     const Encrypted = this.getEncrypted(ChResp);
     const data = { ChResp, Encrypted };
-    const loginResp = await axios.post<any>(this.loginUrl(), JSON.stringify(data), this.getHeaders());
+    const params = {
+      method: "post",
+      url: this.loginUrl(),
+      data: JSON.stringify(data),
+      headers: this.getHeaders(),
+    };
+    this.logger.debug({ params });
+    const loginResp = await axios.request(params);
     return this.handleLoginResponse(loginResp);
   }
 
@@ -161,7 +173,12 @@ export class WSChannel {
     const data = { Code: loginSmsCode, Session: this.Session };
     let loginResp;
     try {
-      loginResp = await axios.put<any>(this.loginMFAUrl(), JSON.stringify(data), this.getHeaders());
+      loginResp = await axios.request({
+        method: "put",
+        url: this.loginMFAUrl(),
+        data: JSON.stringify(data),
+        headers: this.getHeaders(),
+      });
     } catch (err) {
       this.logger.error({ err });
       loginResp = err?.data;
@@ -173,7 +190,12 @@ export class WSChannel {
   async verifyPhone(): Promise<void> {
     const smsVerificationCode = await this.getUserInput("Give the SMS verification code please: ");
     const data = { Code: smsVerificationCode };
-    const verifyPhoneResp = await axios.post(this.verifyPhoneUrl(), JSON.stringify(data), this.getHeaders());
+    const verifyPhoneResp = await axios.request({
+      method: "post",
+      url: this.verifyPhoneUrl(),
+      data: JSON.stringify(data),
+      headers: this.getHeaders(),
+    });
     this.logger.debug({ body: data, verifyPhoneResp: verifyPhoneResp.data });
     return this.handleLoginResponse(verifyPhoneResp);
   }
@@ -182,7 +204,12 @@ export class WSChannel {
     if (!this.AccessToken) throw new Error("No AccessToken, pls call login to get AccessToken");
     const emailVerificationCode = await this.getUserInput("Give the email verification code please: ");
     const data = { AccessToken: this.AccessToken, Code: emailVerificationCode };
-    const verifyEmailResp = await axios.post(this.verifyEmailUrl(), JSON.stringify(data), this.getHeaders());
+    const verifyEmailResp = await axios.request({
+      method: "post",
+      url: this.verifyEmailUrl(),
+      data: JSON.stringify(data),
+      headers: this.getHeaders(),
+    });
     this.logger.debug({ body: data, res: verifyEmailResp.data });
     return this.handleLoginResponse(verifyEmailResp);
   }
@@ -190,7 +217,12 @@ export class WSChannel {
   async uploadPgpKey(armoredKey: string, purpose: "authorize" | "export"): Promise<void> {
     const data = { PgpKey: armoredKey, PgpKeyPurpose: purpose };
     this.logger.debug(data);
-    const uploadPgpKeyResp = await axios.put(this.pgpUrl(), JSON.stringify(data), this.getHeaders());
+    const uploadPgpKeyResp = await axios.request({
+      method: "put",
+      url: this.pgpUrl(),
+      data: JSON.stringify(data),
+      headers: this.getHeaders(),
+    });
     this.logger.debug({ uploadPgpKeyResp: uploadPgpKeyResp.data });
     this.logger.debug(uploadPgpKeyResp);
   }
@@ -198,8 +230,33 @@ export class WSChannel {
   async uploadFile(FileContents: string, FileName: string, FileType: string, Signature: string): Promise<void> {
     const data = { FileContents, FileName, FileType, Signature };
     this.logger.debug(data);
-    const uploadFileResp = await axios.put(this.uploadFileUrl(), JSON.stringify(data), this.getHeaders());
+    const uploadFileResp = await axios.request({
+      method: "put",
+      url: this.filesUrl(),
+      data: JSON.stringify(data),
+      headers: this.getHeaders(),
+    });
     this.logger.debug({ uploadFileResp: uploadFileResp.data });
     this.logger.debug(uploadFileResp);
+  }
+
+  async listFiles(filetype: string, fileStatus: string): Promise<any> {
+    let queryParams = "";
+    if (filetype != "" || fileStatus != "") {
+      queryParams += "?";
+      queryParams += filetype != "" ? `FileType=${filetype}` : "";
+      queryParams += fileStatus != "" && filetype != "" ? "&" : "";
+      queryParams += fileStatus != "" ? `Status=${fileStatus}` : "";
+    }
+    const url = this.filesUrl() + queryParams;
+    this.logger.debug({ url });
+    const downloadFileListResp = await axios.request({
+      url,
+      method: "get",
+      headers: this.getHeaders(),
+    });
+    const { status, statusText, data } = downloadFileListResp;
+    this.logger.debug({ status, statusText, data });
+    return { status, statusText, data };
   }
 }
