@@ -1,4 +1,4 @@
-import { WSChannel } from "./src/isecure.class";
+import { WSChannel } from "./lib/isecure.class";
 import * as fs from "fs";
 import * as openpgp from "openpgp";
 
@@ -54,19 +54,19 @@ async function main() {
   });
 
   // admin role
-  //await ws.register();
-  //await ws.uploadPgpKey(publicKeyArmored, "authorize");
-  //console.log("PGP uploaded..");
+  await ws.register();
+  await ws.uploadPgpKey(publicKeyArmored, "authorize");
+  console.log("PGP uploaded..");
 
   // data role
   ws.updateProps({ Mode: "data" });
-  //await ws.register();
+  await ws.register();
   await ws.login(); // need to login again to get AccessToken
   console.log(`Logged in (${ws.props.Mode})`);
 
-  // const detachedSignature = await createAndVerifyPgpSignature();
-  // const contents = fs.readFileSync("testfile.xml", "utf8").toString();
-  // await ws.uploadFile(Buffer.from(contents).toString("base64"), "testfile.xml", "DUMMY", detachedSignature);
+  const detachedSignature = await createAndVerifyPgpSignature();
+  const contents = fs.readFileSync("testfile.xml", "utf8").toString();
+  await ws.uploadFile(Buffer.from(contents).toString("base64"), "testfile.xml", "DUMMY", detachedSignature);
 
   const resp = await ws.listFiles("VKEUR", "ALL");
   console.log(resp.data);
