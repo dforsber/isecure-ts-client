@@ -4,10 +4,11 @@
     "outDir": "./dist",
     "lib": ["es5", "es6"],
     "target": "es6",
-    "module": "commonjs",
+    "module": "esnext",
     "moduleResolution": "node",
     "emitDecoratorMetadata": true,
-    "experimentalDecorators": true
+    "experimentalDecorators": true,
+    "esModuleInterop": true
   },
   "include": ["./src/*", "src/index.ts", "src/lib/isecure.class.ts"]
 }
