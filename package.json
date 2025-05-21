@@ -15,8 +15,8 @@
     "pretest": "yarn build",
     "test": "yarn test:encryption",
     "prepublishOnly": "yarn build",
-    "example:workflow": "yarn build && node dist/examples/full-workflow/full-workflow.js",
-    "test:encryption": "node dist/examples/gpg-encryption-test/encryption-test.js"
+    "example:workflow": "yarn build && node dist/examples/full-workflow/full-workflow.js && echo '------ example successful, cleaning up --------' && ./scripts/cleanup.sh",
+    "test:encryption": "yarn build && node dist/examples/gpg-encryption-test/encryption-test.js"
   },
   "dependencies": {
     "@openpgp/web-stream-tools": "^0.0.13",

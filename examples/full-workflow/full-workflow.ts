@@ -9,23 +9,23 @@ const __dirname = dirname(__filename);
 
 // Get paths to test files, handling both running from dist or source
 const getSourcePath = (file: string) => {
-  const basePath = __dirname.includes('/dist/') 
-    ? path.join(__dirname.replace('/dist/', '/'), '../gpg-encryption-test')
-    : path.join(__dirname, '../gpg-encryption-test');
+  const basePath = __dirname.includes("/dist/")
+    ? path.join(__dirname.replace("/dist/", "/"), "../gpg-encryption-test")
+    : path.join(__dirname, "../gpg-encryption-test");
   return path.join(basePath, file);
 };
 
 const BaseUrl = "https://ws-api.test.isecure.fi/v2";
-const publicKey = fs.readFileSync(getSourcePath('test.pem'), "utf8").toString();
-const publicKeyArmored = fs.readFileSync(getSourcePath('test-pgp-key.pub'), "utf8").toString();
-const privateKeyArmored = fs.readFileSync(getSourcePath('test-pgp-key.sec'), "utf8").toString();
+const publicKey = fs.readFileSync(getSourcePath("test.pem"), "utf8").toString();
+const publicKeyArmored = fs.readFileSync(getSourcePath("test-pgp-key.pub"), "utf8").toString();
+const privateKeyArmored = fs.readFileSync(getSourcePath("test-pgp-key.sec"), "utf8").toString();
 
 async function createAndVerifyPgpSignature() {
   // Create signature for a file and upload
   const publicKey = await openpgp.readKey({ armoredKey: publicKeyArmored });
   const privateKey = await openpgp.readPrivateKey({ armoredKey: privateKeyArmored });
   const message = await openpgp.createMessage({
-    text: fs.readFileSync(getSourcePath('testfile.xml'), "utf8").toString(),
+    text: fs.readFileSync(getSourcePath("testfile.xml"), "utf8").toString(),
   });
   const detachedSignature = await openpgp.sign({
     message, // Message object
@@ -69,21 +69,23 @@ async function main() {
 
   // admin role
   await ws.register();
-  await ws.uploadPgpKey(publicKeyArmored, "authorize");
-  console.log("PGP uploaded..");
+  await ws.login();
+  await ws.login();
+  // await ws.uploadPgpKey(publicKeyArmored, "authorize");
+  // console.log("PGP uploaded..");
 
-  // data role
-  ws.updateProps({ Mode: "data" });
-  await ws.register();
-  await ws.login(); // need to login again to get AccessToken
-  console.log(`Logged in (${ws.props.Mode})`);
+  // // data role
+  // ws.updateProps({ Mode: "data" });
+  // await ws.register();
+  // await ws.login(); // need to login again to get AccessToken
+  // console.log(`Logged in (${ws.props.Mode})`);
 
-  const detachedSignature = await createAndVerifyPgpSignature();
-  const contents = fs.readFileSync(getSourcePath('testfile.xml'), "utf8").toString();
-  await ws.uploadFile(Buffer.from(contents).toString("base64"), "testfile.xml", "DUMMY", detachedSignature);
+  // const detachedSignature = await createAndVerifyPgpSignature();
+  // const contents = fs.readFileSync(getSourcePath("testfile.xml"), "utf8").toString();
+  // await ws.uploadFile(Buffer.from(contents).toString("base64"), "testfile.xml", "DUMMY", detachedSignature);
 
-  const resp = await ws.listFiles("VKEUR", "ALL");
-  console.log(resp.data);
+  // const resp = await ws.listFiles("VKEUR", "ALL");
+  // console.log(resp.data);
 }
 
 main();
