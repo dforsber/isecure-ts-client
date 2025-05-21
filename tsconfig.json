@@ -8,7 +8,9 @@
     "moduleResolution": "node",
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "declaration": true,
+    "sourceMap": true
   },
-  "include": ["./src/*", "src/index.ts", "src/lib/isecure.class.ts"]
+  "include": ["./src/**/*", "./examples/**/*", "examples/gpg-encryption-test/**/*.ts"]
 }

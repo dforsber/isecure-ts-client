@@ -4,9 +4,19 @@
   "description": "ISECure JS/TS Client",
   "license": "MIT",
   "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
-    "prestart": "tsc",
-    "start": "node dist/index.js"
+    "build": "tsc",
+    "pretest": "yarn build",
+    "test": "yarn test:encryption",
+    "prepublishOnly": "yarn build",
+    "example:workflow": "yarn build && node dist/examples/full-workflow/full-workflow.js",
+    "test:encryption": "node dist/examples/gpg-encryption-test/encryption-test.js"
   },
   "dependencies": {
     "@openpgp/web-stream-tools": "^0.0.13",
