@@ -1,5 +1,22 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-aws cognito-idp admin-delete-user --user-pool-id eu-west-1_QtCfMyN6J --username e_dforsber+test102_at_gmail.com__admin || true
-aws cognito-idp admin-delete-user --user-pool-id eu-west-1_QtCfMyN6J --username e_dforsber+test102_at_gmail.com__data || true
-aws dynamodb delete-item --table-name isecure-ws-channel-users --key '{"email":{"S":"dforsber+test102@gmail.com"}}' || true
+: "${ISECURE_COGNITO_USER_POOL_ID:?Set ISECURE_COGNITO_USER_POOL_ID}"
+: "${ISECURE_DYNAMODB_USERS_TABLE:?Set ISECURE_DYNAMODB_USERS_TABLE}"
+: "${ISECURE_EMAIL:?Set ISECURE_EMAIL}"
+
+username_email=${ISECURE_EMAIL//@/_at_}
+username_email=${username_email//+/_}
+username_email=${username_email//./_}
+
+aws cognito-idp admin-delete-user \
+  --user-pool-id "$ISECURE_COGNITO_USER_POOL_ID" \
+  --username "e_${username_email}__admin" || true
+
+aws cognito-idp admin-delete-user \
+  --user-pool-id "$ISECURE_COGNITO_USER_POOL_ID" \
+  --username "e_${username_email}__data" || true
+
+aws dynamodb delete-item \
+  --table-name "$ISECURE_DYNAMODB_USERS_TABLE" \
+  --key "{\"email\":{\"S\":\"$ISECURE_EMAIL\"}}" || true

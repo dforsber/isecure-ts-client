@@ -17,7 +17,10 @@ const password = "helloWorld";
 const challenge = "ezwXceQ63fV9oWTSJBAE2Zq1Cw5tBIJe+7+Rl8jrgbk=|1475429754114|4017bda8-0a15-4154-a8b7-88069b05cb4e";
 
 function getEncrypted(challenge: string): string {
-  const timestamp = parseInt(challenge?.split("|")[1]);
+  const timestamp = challenge.split("|")[1];
+  if (!timestamp) {
+    throw new Error("Challenge did not contain a timestamp");
+  }
   const pw_pair = password + "||" + timestamp;
   const padding = crypto.constants.RSA_PKCS1_OAEP_PADDING;
   const key = publicKey;

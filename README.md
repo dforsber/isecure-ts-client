@@ -1,84 +1,124 @@
-# ISECure JS/TS Client
+# ISECure TypeScript Client
 
-This is a stateless client side SDK for interacting with ISECure banking file exchange REST API.
+TypeScript SDK for the ISECure WS Channel API.
 
-## Open API specification
+The checked-in OpenAPI contract is [`wsapi_v2.json`](wsapi_v2.json). The live source at <https://isecure.fi/wsapi_v2.json> currently matches this repository copy and reports API version `v2.6.0`.
 
-The OpenAPI specification for the REST API service this client interacts with is in the [wsapi_v2.json](wsapi_v2.json) file.
+## Install
 
-> The master source for wsapi_v2.json is https://isecure.fi/wsapi_v2.json, but we store the copy here for easier reference.
-
-Mandatory features
-
-- User registration with email and phone number verification
-- Certificate enrollment
-- File listing, downloads, and uploads
-
-Optional features
-
-- Integrator API
-- PGP key registration
-- Document signing with PGP
-
-## Registering User Example
-
-Example for registering to ISECure SaaS Bank API service test environment.
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Service
-    Client->>Service: InitRegister
-    Note right of Service: Creating nonce and timestamp
-    Service->>Client: Challenge
-    Client->>Service: Register
-    Service->>Client: Registration successful
-    Client->>Service: Login
-    Service->>Client: Ok, verify email
-    Client->>Service: Email code
-    Service->>Client: Email verified
-    Client->>Service: Login
-    Service->>Client: Ok, verify phone
-    Client->>Service: SMS code
-    Service->>Client: Phone verified
+```sh
+yarn add isecure-ts-client
 ```
 
-## Login Example (Data User)
-
-Example of login flow for a data user when both email and phone are already verified.
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Service
-    Client->>Service: InitLogin
-    Note right of Service: Creating nonce and timestamp
-    Service->>Client: Challenge
-    Client->>Service: Login
-    Note right of Service: User has verified email and phone
-    Service->>Client: Login successful
+```ts
+import { WSChannel } from "isecure-ts-client";
 ```
 
-## Login Example (Admin User with MFA)
+## Basic Usage
 
-Example of login flow for an admin user requiring MFA with SMS verification.
+```ts
+const client = new WSChannel({
+  ApiKey: process.env.ISECURE_API_KEY ?? "0",
+  Company: "Example Company",
+  Name: "Example User",
+  Password: process.env.ISECURE_PASSWORD!,
+  Phone: "+358401234567",
+  PublicKey: process.env.ISECURE_PUBLIC_KEY_PEM!,
+  BaseUrl: "https://ws-api.test.isecure.fi/v2",
+  Email: "user@example.test",
+  Mode: "data",
+  Bank: "nordea",
+});
 
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Service
-    Client->>Service: InitLogin
-    Note right of Service: Creating nonce and timestamp
-    Service->>Client: Challenge
-    Client->>Service: Login
-    Note right of Service: Admin requires MFA
-    Service->>Client: Login requires MFA, SMS code sent automatically
-    Note left of Client: User receives SMS code
+const state = await client.login();
 
-    Note over Client,Service: Optional path for requesting a new SMS code
-    Client-->+Service: Request new SMS code
-    Service-->>-Client: SMS code sent
-
-    Client->>Service: Submit SMS code
-    Service->>Client: Login successful
+if (state.status === "authenticated") {
+  const files = await client.listFiles({ Status: "ALL" });
+  console.log(files.FileDescriptors);
+}
 ```
+
+Admin login and first-time registration may require MFA, email, or phone verification. The SDK returns typed auth states instead of reading from the terminal:
+
+```ts
+const state = await client.login();
+
+if (state.status === "needs_mfa") {
+  await client.submitMfaCode("123456");
+}
+
+if (state.status === "needs_email_verification") {
+  await client.verifyEmail("123456");
+}
+
+if (state.status === "needs_phone_verification") {
+  await client.verifyPhone("123456");
+}
+```
+
+For CLI scripts, pass a prompt adapter:
+
+```ts
+await client.loginWithPrompt({
+  requestMfaCode: async () => "...",
+  requestEmailCode: async () => "...",
+  requestPhoneCode: async () => "...",
+});
+```
+
+The runnable terminal implementation lives in [`examples/full-workflow/full-workflow.ts`](examples/full-workflow/full-workflow.ts).
+
+## Supported Operations
+
+Generated request and response types are built from `wsapi_v2.json` with `swagger2openapi` and `openapi-typescript`.
+
+Currently supported:
+
+- `InitRegister`
+- `Register`
+- `InitLogin`
+- `Login`
+- `LoginMFA`
+- `VerifyEmail`
+- `VerifyPhone`
+- `UploadKey`
+- `UploadFile`
+- `ListFiles`
+
+Not yet implemented:
+
+- `InitPasswordReset`
+- `PasswordReset`
+- `ListCerts`
+- `ConfigCerts`
+- `ShareCerts`
+- `UnshareCerts`
+- `ExportCert`
+- `ImportCert`
+- `EnrollCert`
+- `DownloadFile`
+- `DeleteFile`
+- `ListAccounts`
+- `ListKeys`
+- `DeleteKey`
+- `Logout`
+
+The operation lists are exported as `SUPPORTED_OPERATIONS` and `UNSUPPORTED_OPERATIONS`.
+
+## Development
+
+```sh
+yarn install
+yarn typecheck
+yarn test
+yarn pack:check
+```
+
+Important gates:
+
+- `yarn generate:types` converts Swagger 2.0 to OpenAPI 3.0 and generates TypeScript types.
+- `yarn typecheck` runs strict TypeScript for the SDK and examples.
+- `yarn test` runs Vitest with coverage thresholds.
+- `yarn pack:check` verifies the library-only package payload.
+
+Examples compile separately to `dist-examples`; they are not part of the npm package payload.

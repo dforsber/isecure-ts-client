@@ -1,35 +1,53 @@
 {
-  "name": "isecure-js-client",
+  "name": "isecure-ts-client",
   "version": "0.1.0",
-  "description": "ISECure JS/TS Client",
+  "description": "TypeScript SDK for the ISECure WS Channel API",
   "license": "MIT",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./wsapi-types": {
+      "types": "./dist/generated/wsapi-v2.d.ts",
+      "import": "./dist/generated/wsapi-v2.js"
+    }
+  },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "build": "tsc",
-    "pretest": "yarn build",
-    "test": "yarn test:encryption",
-    "prepublishOnly": "yarn build",
-    "example:workflow": "yarn build && node dist/examples/full-workflow/full-workflow.js && echo '------ example successful, cleaning up --------' && ./scripts/cleanup.sh",
-    "test:encryption": "yarn build && node dist/examples/gpg-encryption-test/encryption-test.js"
+    "clean": "rm -rf dist dist-examples coverage .generated",
+    "generate:types": "mkdir -p .generated src/generated && swagger2openapi wsapi_v2.json -o .generated/wsapi_v2.openapi.json && openapi-typescript .generated/wsapi_v2.openapi.json -o src/generated/wsapi-v2.ts",
+    "build": "rm -rf dist && yarn generate:types && tsc -p tsconfig.json",
+    "build:examples": "rm -rf dist-examples && tsc -p tsconfig.examples.json",
+    "typecheck": "yarn generate:types && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.examples.json --noEmit",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "pack:check": "yarn build && NPM_CONFIG_CACHE=${TMPDIR:-/tmp}/isecure-npm-cache npm pack --dry-run",
+    "prepublishOnly": "yarn typecheck && yarn test && yarn pack:check",
+    "example:workflow": "yarn build:examples && node dist-examples/examples/full-workflow/full-workflow.js"
   },
   "dependencies": {
-    "@openpgp/web-stream-tools": "^0.0.13",
-    "axios": "^1.3.4",
-    "bunyan": "^1.8.15",
-    "openpgp": "^5.7.0",
-    "ts-node": "^10.9.2"
+    "axios": "^1.18.0"
   },
   "devDependencies": {
-    "@types/axios": "^0.14.0",
-    "@types/bunyan": "^1.8.8",
-    "@types/node": "^18.15.3",
-    "@types/openpgp": "^4.4.18",
-    "typescript": "^5.0.2"
+    "@types/node": "^26.0.0",
+    "@vitest/coverage-v8": "^4.1.9",
+    "openapi-typescript": "^7.13.0",
+    "openpgp": "^6.3.1",
+    "swagger2openapi": "^7.0.8",
+    "typescript": "5.9.3",
+    "vite": "^8.0.16",
+    "vitest": "^4.1.9"
   }
 }

@@ -1,262 +1,345 @@
-import * as crypto from "crypto";
-import * as openpgp from "openpgp";
-import axios from "axios";
-import * as readline from "readline";
-import * as bunyan from "bunyan";
+import * as crypto from "node:crypto";
+import {
+  classifyAuthResponse,
+  classifyVerificationResponse,
+  mergeTokens,
+  type AuthPromptAdapter,
+  type AuthState,
+  type SessionTokens,
+} from "./auth.js";
+import {
+  type ApiResponse,
+  type InitLoginResponse,
+  type InitRegisterResponse,
+  type ListFilesQuery,
+  type ListFilesResponse,
+  type LogLevel,
+  type LoginMfaRequest,
+  type LoginMfaResponse,
+  type LoginRequest,
+  type LoginResponse,
+  type Mode,
+  type PgpKeyPurpose,
+  type RegisterRequest,
+  type RegisterResponse,
+  type UploadFileRequest,
+  type UploadKeyRequest,
+  type VerifyEmailRequest,
+  type VerifyPhoneRequest,
+} from "./api-types.js";
+import { AxiosTransport, type HttpHeaders, type Transport } from "./transport.js";
 
 export interface IWSChannel {
   Company: string;
   Name: string;
   Password: string;
   Email: string;
-  Mode: "admin" | "data";
+  Mode: Mode;
   Phone: string;
   PublicKey: string;
   BaseUrl: string;
   Bank: string;
   ApiKey?: string;
-  LogLevel?: "error" | "warn" | "info" | "debug";
+  LogLevel?: LogLevel;
+}
+
+export interface WSChannelOptions {
+  transport?: Transport;
+  logger?: Logger;
+}
+
+export interface Logger {
+  debug(message: string, meta?: unknown): void;
+  info(message: string, meta?: unknown): void;
+  warn(message: string, meta?: unknown): void;
+  error(message: string, meta?: unknown): void;
+}
+
+class NoopLogger implements Logger {
+  debug(): void {}
+  info(): void {}
+  warn(): void {}
+  error(): void {}
 }
 
 export class WSChannel {
-  private pgpUrl = () => encodeURI(this.props.BaseUrl + "/pgp");
-  private getChUrl = () => encodeURI(this.props.BaseUrl + `/account/${this.props.Email}/${this.props.Mode}`);
-  private registerUrl = () => encodeURI(this.props.BaseUrl + `/account/${this.props.Email}/${this.props.Mode}`);
-  private getloginChUrl = () => encodeURI(this.props.BaseUrl + `/session/${this.props.Email}/${this.props.Mode}`);
-  private filesUrl = () => encodeURI(this.props.BaseUrl + `/files/${this.props.Bank}`);
-  private verifyPhoneUrl = () => encodeURI(this.registerUrl() + "/" + this.props.Phone);
-  private loginUrl = () => this.getloginChUrl();
-  private loginMFAUrl = () => this.loginUrl() + "/mfacode";
-  private verifyEmailUrl = () => this.registerUrl();
-  private AccessToken: string;
-  private IdToken: string;
-  private Session: string;
-  private ApiKey: string;
-  private headers = { "Content-Type": "application/json" };
-  private logger = bunyan.createLogger({
-    name: "WSChannel",
-    level: this.getLogLevel(this.props?.LogLevel),
-  });
+  private readonly transport: Transport;
+  private readonly logger: Logger;
+  private tokens: SessionTokens = {};
 
-  constructor(public props: IWSChannel) {}
-
-  private getLogLevel(level: string): bunyan.LogLevel {
-    if (!level) return bunyan.INFO;
-    if (level.toLowerCase() == "info") return bunyan.INFO;
-    if (level.toLowerCase() == "debug") return bunyan.DEBUG;
-    if (level.toLowerCase() == "error") return bunyan.ERROR;
-    if (level.toLowerCase() == "warn") return bunyan.WARN;
-    return bunyan.INFO;
+  constructor(
+    public props: IWSChannel,
+    options: WSChannelOptions = {},
+  ) {
+    this.transport = options.transport ?? new AxiosTransport();
+    this.logger = options.logger ?? new NoopLogger();
   }
 
-  private async getRegChallenge(): Promise<string> {
-    const resp = await axios.request({ url: this.getChUrl(), method: "get" });
-    const challenge = resp.data.Challenge;
-    this.logger.debug({ getChUrl: this.getChUrl(), challenge });
-    return challenge;
+  get session(): Readonly<SessionTokens> {
+    return this.tokens;
   }
 
-  private async getSessChallenge(): Promise<string> {
-    const resp = await axios.request<any>({ url: this.getloginChUrl(), method: "get" });
-    const challenge = resp.data.Challenge;
-    this.logger.debug({ getSessChUrl: this.getloginChUrl(), challenge });
-    return challenge;
-  }
-
-  private getHeaders(): any {
-    let headers = {};
-    if (this.IdToken) headers = { ...headers, Authorization: this.IdToken };
-    if (this.ApiKey) headers = { ...headers, "x-api-key": this.ApiKey };
-    headers = { ...this.headers, ...headers };
-    this.logger.debug(headers);
-    return headers;
-  }
-
-  private getEncrypted(challenge: string): string {
-    const timestamp = parseInt(challenge?.split("|")[1]);
-    const password = this.props.Password;
-    const pw_pair = password + "||" + timestamp;
-    const padding = crypto.constants.RSA_PKCS1_OAEP_PADDING;
-    const key = this.props.PublicKey;
-    const encryptedData = crypto.publicEncrypt({ key, padding }, Buffer.from(pw_pair)).toString("base64");
-    return encryptedData;
-  }
-
-  public updateProps(overrideProps: Partial<IWSChannel>): void {
+  updateProps(overrideProps: Partial<IWSChannel>): void {
     this.props = { ...this.props, ...overrideProps };
   }
 
-  async register(): Promise<void> {
-    const ChResp = await this.getRegChallenge();
-    const Encrypted = this.getEncrypted(ChResp);
-    const data = {
-      ApiKey: this.props.ApiKey,
+  async register(): Promise<RegisterResponse> {
+    const ChResp = await this.getRegistrationChallenge();
+    const request: RegisterRequest = {
+      ApiKey: this.props.ApiKey ?? "0",
       ChResp,
       Company: this.props.Company,
-      Encrypted,
+      Encrypted: this.encryptPasswordChallenge(ChResp),
       Name: this.props.Name,
       Phone: this.props.Phone,
     };
-    const url = this.registerUrl();
-    this.logger.debug({ url, body: data });
-    const registerResp = await axios.request({
-      method: "put",
-      url,
-      data: JSON.stringify(data),
-      headers: this.getHeaders(),
+
+    const response = await this.transport.request<RegisterResponse, RegisterRequest>({
+      method: "PUT",
+      url: this.accountUrl(),
+      body: request,
+      headers: this.jsonHeaders(),
     });
-    this.logger.debug({ registerResp: registerResp.data });
+
+    this.tokens = { ...this.tokens, apiKey: response.data.ApiKey };
+    this.logger.debug("registered account", { mode: this.props.Mode, email: this.props.Email });
+    return response.data;
   }
 
-  private async getUserInput(question: string): Promise<string> {
-    return new Promise((resolve) => {
-      const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-      });
-      rl.question(question, (data: string) => {
-        resolve(data);
-        rl.close();
-      });
-    });
-  }
-
-  private async handleLoginResponse(loginResp: any): Promise<void> {
-    this.logger.debug({ loginResp: loginResp.data });
-    this.AccessToken = loginResp.data?.AccessToken ?? this.AccessToken;
-    this.Session = loginResp.data?.Session ?? this.Session;
-    this.IdToken = loginResp.data?.IdToken ?? this.IdToken;
-    this.ApiKey = loginResp.data?.ApiKey ?? this.ApiKey;
-    const respText = loginResp.data?.ResponseText;
-    const respCode = loginResp.data?.ResponseCode;
-    this.logger.debug({ respCode, respText });
-    if (respCode == "00" && respText == "Give SMS code") {
-      return this.loginMFA();
-    }
-    if (respCode == "00" && respText == "User authentication failed. Verify phone number with received SMS.") {
-      return this.verifyPhone();
-    }
-    if (respCode == "00" && respText == "Login OK. Verify email address.") {
-      return this.verifyEmail();
-    }
-    if (respCode == "00" && respText == "Phone confirmation successful.") {
-      return this.login();
-    }
-    if (respCode == "00" && respText == "Email verification successful.") {
-      return this.login();
-    }
-    if (
-      respCode == "01" &&
-      respText == "Login failed; LimitExceededException: Attempt limit exceeded, please try after some time."
-    ) {
-      throw new Error(respText);
-    }
-  }
-
-  async login(): Promise<void> {
-    const ChResp = await this.getSessChallenge();
-    const Encrypted = this.getEncrypted(ChResp);
-    const data = { ChResp, Encrypted };
-    const params = {
-      method: "post",
-      url: this.loginUrl(),
-      data: JSON.stringify(data),
-      headers: this.getHeaders(),
+  async login(): Promise<AuthState> {
+    const ChResp = await this.getSessionChallenge();
+    const request: LoginRequest = {
+      ChResp,
+      Encrypted: this.encryptPasswordChallenge(ChResp),
     };
-    this.logger.debug({ params });
-    const loginResp = await axios.request(params);
-    return this.handleLoginResponse(loginResp);
+
+    const response = await this.transport.request<LoginResponse, LoginRequest>({
+      method: "POST",
+      url: this.sessionUrl(),
+      body: request,
+      headers: this.jsonHeaders(),
+    });
+
+    return this.applyAuthResponse(response.data);
   }
 
-  async loginMFA(): Promise<void> {
-    const loginSmsCode = await this.getUserInput("Give the SMS login code please: ");
-    const data = { Code: loginSmsCode, Session: this.Session };
-    let loginResp;
-    try {
-      loginResp = await axios.request({
-        method: "put",
-        url: this.loginMFAUrl(),
-        data: JSON.stringify(data),
-        headers: this.getHeaders(),
-      });
-    } catch (err) {
-      this.logger.error({ err });
-      loginResp = err?.data;
-    } finally {
-      return this.handleLoginResponse(loginResp);
+  async submitMfaCode(code: string): Promise<AuthState> {
+    if (!this.tokens.session) {
+      throw new Error("Cannot submit MFA code before login returns a session token");
     }
-  }
 
-  async verifyPhone(): Promise<void> {
-    const smsVerificationCode = await this.getUserInput("Give the SMS verification code please: ");
-    const data = { Code: smsVerificationCode };
-    const verifyPhoneResp = await axios.request({
-      method: "post",
-      url: this.verifyPhoneUrl(),
-      data: JSON.stringify(data),
-      headers: this.getHeaders(),
+    const request: LoginMfaRequest = { Code: code, Session: this.tokens.session };
+    const response = await this.transport.request<LoginMfaResponse, LoginMfaRequest>({
+      method: "PUT",
+      url: `${this.sessionUrl()}/mfacode`,
+      body: request,
+      headers: this.jsonHeaders(),
     });
-    this.logger.debug({ body: data, verifyPhoneResp: verifyPhoneResp.data });
-    return this.handleLoginResponse(verifyPhoneResp);
+
+    return this.applyAuthResponse(response.data);
   }
 
-  async verifyEmail(): Promise<void> {
-    if (!this.AccessToken) throw new Error("No AccessToken, pls call login to get AccessToken");
-    const emailVerificationCode = await this.getUserInput("Give the email verification code please: ");
-    const data = { AccessToken: this.AccessToken, Code: emailVerificationCode };
-    const verifyEmailResp = await axios.request({
-      method: "post",
-      url: this.verifyEmailUrl(),
-      data: JSON.stringify(data),
-      headers: this.getHeaders(),
+  async loginMFA(code: string): Promise<AuthState> {
+    return this.submitMfaCode(code);
+  }
+
+  async verifyPhone(code: string): Promise<AuthState> {
+    const request: VerifyPhoneRequest = { Code: code };
+    const response = await this.transport.request<ApiResponse, VerifyPhoneRequest>({
+      method: "POST",
+      url: `${this.accountUrl()}/${encodeURIComponent(this.props.Phone)}`,
+      body: request,
+      headers: this.authHeaders(),
     });
-    this.logger.debug({ body: data, res: verifyEmailResp.data });
-    return this.handleLoginResponse(verifyEmailResp);
+
+    return classifyVerificationResponse(this.props.Mode, "phone", response.data);
   }
 
-  async uploadPgpKey(armoredKey: string, purpose: "authorize" | "export"): Promise<void> {
-    const data = { PgpKey: armoredKey, PgpKeyPurpose: purpose };
-    this.logger.debug(data);
-    const uploadPgpKeyResp = await axios.request({
-      method: "put",
+  async verifyEmail(code: string): Promise<AuthState> {
+    if (!this.tokens.accessToken) {
+      throw new Error("Cannot verify email before login returns an access token");
+    }
+
+    const request: VerifyEmailRequest = { AccessToken: this.tokens.accessToken, Code: code };
+    const response = await this.transport.request<ApiResponse, VerifyEmailRequest>({
+      method: "POST",
+      url: this.accountUrl(),
+      body: request,
+      headers: this.authHeaders(),
+    });
+
+    return classifyVerificationResponse(this.props.Mode, "email", response.data);
+  }
+
+  async loginWithPrompt(prompt: AuthPromptAdapter, maxTransitions = 8): Promise<AuthState> {
+    let state = await this.login();
+
+    for (let transition = 0; transition < maxTransitions; transition += 1) {
+      if (state.status === "authenticated" || state.status === "failed") {
+        return state;
+      }
+
+      if (state.status === "needs_mfa") {
+        state = await this.submitMfaCode(await prompt.requestMfaCode(state));
+        continue;
+      }
+
+      if (state.status === "needs_email_verification") {
+        state = await this.verifyEmail(await prompt.requestEmailCode(state));
+        continue;
+      }
+
+      if (state.status === "needs_phone_verification") {
+        state = await this.verifyPhone(await prompt.requestPhoneCode(state));
+        continue;
+      }
+
+      state = await this.login();
+    }
+
+    throw new Error("Authentication did not settle before maxTransitions was reached");
+  }
+
+  async uploadPgpKey(armoredKey: string, purpose: PgpKeyPurpose): Promise<ApiResponse> {
+    const request: UploadKeyRequest = { PgpKey: armoredKey, PgpKeyPurpose: purpose };
+    const response = await this.transport.request<ApiResponse, UploadKeyRequest>({
+      method: "PUT",
       url: this.pgpUrl(),
-      data: JSON.stringify(data),
-      headers: this.getHeaders(),
+      body: request,
+      headers: this.authHeaders(),
     });
-    this.logger.debug({ uploadPgpKeyResp: uploadPgpKeyResp.data });
-    this.logger.debug(uploadPgpKeyResp);
+
+    return response.data;
   }
 
-  async uploadFile(FileContents: string, FileName: string, FileType: string, Signature: string): Promise<void> {
-    const data = { FileContents, FileName, FileType, Signature };
-    this.logger.debug(data);
-    const uploadFileResp = await axios.request({
-      method: "put",
+  async uploadFile(request: UploadFileRequest): Promise<ApiResponse>;
+  async uploadFile(FileContents: string, FileName: string, FileType: string, Signature: string): Promise<ApiResponse>;
+  async uploadFile(
+    requestOrContents: UploadFileRequest | string,
+    FileName?: string,
+    FileType?: string,
+    Signature?: string,
+  ): Promise<ApiResponse> {
+    const request: UploadFileRequest =
+      typeof requestOrContents === "string"
+        ? {
+            FileContents: requestOrContents,
+            FileName: requireValue(FileName, "FileName"),
+            FileType: requireValue(FileType, "FileType"),
+            Signature: requireValue(Signature, "Signature"),
+          }
+        : requestOrContents;
+
+    const response = await this.transport.request<ApiResponse, UploadFileRequest>({
+      method: "PUT",
       url: this.filesUrl(),
-      data: JSON.stringify(data),
-      headers: this.getHeaders(),
+      body: request,
+      headers: this.authHeaders(),
     });
-    this.logger.debug({ uploadFileResp: uploadFileResp.data });
-    this.logger.debug(uploadFileResp);
+
+    return response.data;
   }
 
-  async listFiles(filetype: string, fileStatus: string): Promise<any> {
-    let queryParams = "";
-    if (filetype != "" || fileStatus != "") {
-      queryParams += "?";
-      queryParams += filetype != "" ? `FileType=${filetype}` : "";
-      queryParams += fileStatus != "" && filetype != "" ? "&" : "";
-      queryParams += fileStatus != "" ? `Status=${fileStatus}` : "";
+  async listFiles(query?: ListFilesQuery): Promise<ListFilesResponse>;
+  async listFiles(fileType: string, fileStatus: string): Promise<ListFilesResponse>;
+  async listFiles(queryOrFileType: ListFilesQuery | string = {}, fileStatus = ""): Promise<ListFilesResponse> {
+    const query: ListFilesQuery = {};
+    if (typeof queryOrFileType === "string") {
+      if (queryOrFileType) query.FileType = queryOrFileType;
+      if (fileStatus) query.Status = fileStatus;
+    } else {
+      if (queryOrFileType.FileType) query.FileType = queryOrFileType.FileType;
+      if (queryOrFileType.Status) query.Status = queryOrFileType.Status;
     }
-    const url = this.filesUrl() + queryParams;
-    this.logger.debug({ url });
-    const downloadFileListResp = await axios.request({
-      url,
-      method: "get",
-      headers: this.getHeaders(),
+
+    const response = await this.transport.request<ListFilesResponse>({
+      method: "GET",
+      url: this.filesUrl(),
+      query,
+      headers: this.authHeaders(),
     });
-    const { status, statusText, data } = downloadFileListResp;
-    this.logger.debug({ status, statusText, data });
-    return { status, statusText, data };
+
+    return response.data;
   }
+
+  private async getRegistrationChallenge(): Promise<string> {
+    const response = await this.transport.request<InitRegisterResponse>({
+      method: "GET",
+      url: this.accountUrl(),
+      headers: this.jsonHeaders(),
+    });
+
+    return response.data.Challenge;
+  }
+
+  private async getSessionChallenge(): Promise<string> {
+    const response = await this.transport.request<InitLoginResponse>({
+      method: "GET",
+      url: this.sessionUrl(),
+      headers: this.jsonHeaders(),
+    });
+
+    return response.data.Challenge;
+  }
+
+  private applyAuthResponse(response: LoginResponse | LoginMfaResponse): AuthState {
+    this.tokens = mergeTokens(this.tokens, response);
+    return classifyAuthResponse(this.props.Mode, response, this.tokens);
+  }
+
+  private encryptPasswordChallenge(challenge: string): string {
+    const timestamp = challenge.split("|")[1];
+    if (!timestamp) {
+      throw new Error("ISECure challenge did not contain a timestamp");
+    }
+
+    return crypto
+      .publicEncrypt(
+        {
+          key: this.props.PublicKey,
+          padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+        },
+        Buffer.from(`${this.props.Password}||${timestamp}`),
+      )
+      .toString("base64");
+  }
+
+  private authHeaders(): HttpHeaders {
+    const headers = this.jsonHeaders();
+    if (this.tokens.idToken) headers.Authorization = this.tokens.idToken;
+    if (this.tokens.apiKey) headers["x-api-key"] = this.tokens.apiKey;
+    return headers;
+  }
+
+  private jsonHeaders(): HttpHeaders {
+    return { "Content-Type": "application/json" };
+  }
+
+  private accountUrl(): string {
+    return this.url("account", this.props.Email, this.props.Mode);
+  }
+
+  private sessionUrl(): string {
+    return this.url("session", this.props.Email, this.props.Mode);
+  }
+
+  private filesUrl(): string {
+    return this.url("files", this.props.Bank);
+  }
+
+  private pgpUrl(): string {
+    return this.url("pgp");
+  }
+
+  private url(...segments: string[]): string {
+    return `${this.props.BaseUrl.replace(/\/+$/, "")}/${segments.map(encodeURIComponent).join("/")}`;
+  }
+}
+
+function requireValue(value: string | undefined, name: string): string {
+  if (!value) {
+    throw new Error(`${name} is required`);
+  }
+
+  return value;
 }
