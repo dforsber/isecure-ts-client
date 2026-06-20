@@ -8,9 +8,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Get source directory path (from dist back to source, or directly from source)
-const srcPath = __dirname.includes('/dist/') 
-  ? path.join(__dirname.replace('/dist/', '/'), './test.pem')  // When running from dist
-  : path.join(__dirname, './test.pem');  // When running from source
+const srcPath = __dirname.includes("/dist/")
+  ? path.join(__dirname.replace("/dist/", "/"), "./test.pem") // When running from dist
+  : path.join(__dirname, "./test.pem"); // When running from source
 
 const publicKey = fs.readFileSync(srcPath, "utf8").toString();
 const password = "helloWorld";

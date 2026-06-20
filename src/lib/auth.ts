@@ -60,7 +60,7 @@ export function mergeTokens(current: SessionTokens, response: AuthResponse): Ses
     apiKey: response.ApiKey ?? current.apiKey,
     expiresIn: response.ExpiresIn ?? current.expiresIn,
     idToken: response.IdToken ?? current.idToken,
-    session: "Session" in response ? response.Session ?? current.session : current.session,
+    session: "Session" in response ? (response.Session ?? current.session) : current.session,
   };
 }
 

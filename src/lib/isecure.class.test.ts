@@ -475,7 +475,9 @@ describe("WSChannel", () => {
     expect(transport.requests.find((request) => request.url.endsWith("/certs/nordea"))?.query).toEqual({
       PgpKeyId: "3A3A59B2",
     });
-    expect(transport.requests.find((request) => request.method === "DELETE" && request.url.endsWith("/pgp"))?.body).toEqual({
+    expect(
+      transport.requests.find((request) => request.method === "DELETE" && request.url.endsWith("/pgp"))?.body,
+    ).toEqual({
       PgpKeyId: "3A3A59B2",
     });
     expect(client.session).toEqual({});
@@ -483,7 +485,9 @@ describe("WSChannel", () => {
 
   it("rejects malformed challenges and incomplete legacy upload arguments", async () => {
     const malformedTransport = new FakeTransport();
-    malformedTransport.respond(() => response({ Challenge: "missing-timestamp", ResponseCode: "00", ResponseText: "OK" }));
+    malformedTransport.respond(() =>
+      response({ Challenge: "missing-timestamp", ResponseCode: "00", ResponseText: "OK" }),
+    );
 
     const client = new WSChannel(props(), { transport: malformedTransport });
     await expect(client.login()).rejects.toThrow("challenge did not contain a timestamp");

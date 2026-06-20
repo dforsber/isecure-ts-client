@@ -54,22 +54,30 @@
     "generate:types": "mkdir -p .generated src/generated && swagger2openapi wsapi_v2.json -o .generated/wsapi_v2.openapi.json && openapi-typescript .generated/wsapi_v2.openapi.json -o src/generated/wsapi-v2.ts",
     "build": "rm -rf dist && yarn generate:types && tsc -p tsconfig.json",
     "build:examples": "rm -rf dist-examples && tsc -p tsconfig.examples.json",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "typecheck": "yarn generate:types && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.examples.json --noEmit",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "pack:check": "yarn build && NPM_CONFIG_CACHE=${TMPDIR:-/tmp}/isecure-npm-cache npm pack --dry-run",
-    "prepublishOnly": "yarn typecheck && yarn test && yarn pack:check",
+    "prepublishOnly": "yarn format:check && yarn lint && yarn typecheck && yarn test && yarn pack:check",
     "example:workflow": "yarn build:examples && node dist-examples/examples/full-workflow/full-workflow.js"
   },
   "dependencies": {
     "axios": "^1.18.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^22",
     "@vitest/coverage-v8": "^4.1.9",
+    "eslint": "^10.5.0",
+    "eslint-config-prettier": "^10.1.8",
     "openapi-typescript": "^7.13.0",
+    "prettier": "^3.8.4",
     "swagger2openapi": "^7.0.8",
     "typescript": "5.9.3",
+    "typescript-eslint": "^8.61.1",
     "vite": "^8.0.16",
     "vitest": "^4.1.9"
   }

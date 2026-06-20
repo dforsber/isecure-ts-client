@@ -1,7 +1,6 @@
 // encrypter.ts
 import crypto from "crypto";
 import fs from "fs";
-import path from "path";
 
 // Generate key pair
 const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", {

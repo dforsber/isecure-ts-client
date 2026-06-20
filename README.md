@@ -25,18 +25,18 @@ import { WSChannel } from "isecure-ts-client";
 
 ## Configuration
 
-| Environment variable | Required | Description |
-| --- | --- | --- |
-| `ISECURE_BASE_URL` | No | API endpoint. Defaults to `https://ws-api.test.isecure.fi/v2` in examples. |
-| `ISECURE_API_KEY` | No | Existing integrator API key. Use `0` or omit for initial integrator registration. |
-| `ISECURE_COMPANY` | Yes | Company name for registration. |
-| `ISECURE_NAME` | Yes | Full user name for registration. |
-| `ISECURE_EMAIL` | Yes | Account email address. |
-| `ISECURE_PHONE` | Yes | Phone number with country code, for example `+358401234567`. |
-| `ISECURE_PASSWORD` | Yes | Account password. |
-| `ISECURE_PUBLIC_KEY_PEM` | Yes | ISECure RSA public key in PEM format. |
-| `ISECURE_MODE` | No | `admin` or `data`. Defaults to `data` in examples. |
-| `ISECURE_BANK` | No | Bank identifier. Defaults to `nordea` in examples. |
+| Environment variable     | Required | Description                                                                       |
+| ------------------------ | -------- | --------------------------------------------------------------------------------- |
+| `ISECURE_BASE_URL`       | No       | API endpoint. Defaults to `https://ws-api.test.isecure.fi/v2` in examples.        |
+| `ISECURE_API_KEY`        | No       | Existing integrator API key. Use `0` or omit for initial integrator registration. |
+| `ISECURE_COMPANY`        | Yes      | Company name for registration.                                                    |
+| `ISECURE_NAME`           | Yes      | Full user name for registration.                                                  |
+| `ISECURE_EMAIL`          | Yes      | Account email address.                                                            |
+| `ISECURE_PHONE`          | Yes      | Phone number with country code, for example `+358401234567`.                      |
+| `ISECURE_PASSWORD`       | Yes      | Account password.                                                                 |
+| `ISECURE_PUBLIC_KEY_PEM` | Yes      | ISECure RSA public key in PEM format.                                             |
+| `ISECURE_MODE`           | No       | `admin` or `data`. Defaults to `data` in examples.                                |
+| `ISECURE_BANK`           | No       | Bank identifier. Defaults to `nordea` in examples.                                |
 
 ## Basic Usage
 

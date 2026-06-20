@@ -8,7 +8,7 @@ const encryptedData = fs.readFileSync("py_encrypted.txt", "utf8").toString();
 
 function decryptData(encryptedBase64: string): string {
   // Decode from base64 and decrypt
-  const encryptedBuffer = Buffer.from(encryptedBase64, "base64")
+  const encryptedBuffer = Buffer.from(encryptedBase64, "base64");
   const padding = crypto.constants.RSA_PKCS1_OAEP_PADDING;
 
   const decryptedData = crypto.privateDecrypt({ key: privateKey, padding }, encryptedBuffer);

@@ -29,6 +29,12 @@ jobs:
       - name: Audit dependencies
         run: yarn audit
 
+      - name: Check formatting
+        run: yarn format:check
+
+      - name: Lint
+        run: yarn lint
+
       - name: Typecheck
         run: yarn typecheck
 

@@ -50,13 +50,13 @@ export class AxiosTransport implements Transport {
 
 export class FakeTransport implements Transport {
   readonly requests: TransportRequest[] = [];
-  private readonly handlers: Array<(request: TransportRequest) => TransportResponse<unknown> | undefined> = [];
+  private readonly handlers: ((request: TransportRequest) => TransportResponse<unknown> | undefined)[] = [];
 
   respond(handler: (request: TransportRequest) => TransportResponse<unknown> | undefined): void {
     this.handlers.push(handler);
   }
 
-  async request<ResponseBody, RequestBody = unknown>(
+  request<ResponseBody, RequestBody = unknown>(
     request: TransportRequest<RequestBody>,
   ): Promise<TransportResponse<ResponseBody>> {
     this.requests.push(request);
@@ -64,10 +64,10 @@ export class FakeTransport implements Transport {
     for (const handler of this.handlers) {
       const response = handler(request);
       if (response) {
-        return response as TransportResponse<ResponseBody>;
+        return Promise.resolve(response as TransportResponse<ResponseBody>);
       }
     }
 
-    throw new Error(`No fake transport response for ${request.method} ${request.url}`);
+    return Promise.reject(new Error(`No fake transport response for ${request.method} ${request.url}`));
   }
 }

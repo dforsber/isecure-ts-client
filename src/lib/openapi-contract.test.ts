@@ -255,7 +255,7 @@ describe("OpenAPI contract honesty", () => {
 
     for (const operationId of SUPPORTED_OPERATIONS) {
       const operation = operationsById.get(operationId);
-      const operationContract = contract[operationId];
+      const operationContract: OperationContract = contract[operationId];
       if (!operation) {
         throw new Error(`Missing OpenAPI operation ${operationId}`);
       }
@@ -268,11 +268,14 @@ describe("OpenAPI contract honesty", () => {
       const context: ContractContext = { transport, loginResponse: "authenticated" };
       contextByTransport.set(transport, context);
       const client = new WSChannel(clientProps(), { transport });
-      await operationContract.setup?.(client, context);
+      if (operationContract.setup) {
+        await operationContract.setup(client, context);
+      }
 
       await operationContract.invoke(client, context);
 
-      const request = transport.requests[operationContract.requestIndex ?? 0];
+      const requestIndex = operationContract.requestIndex ?? 0;
+      const request = transport.requests[requestIndex];
       expect(request, operationId).toBeDefined();
       expect(request?.method, operationId).toBe(operationContract.method);
       expect(pathname(request?.url), operationId).toBe(fillPath(operationContract.path));
@@ -325,13 +328,29 @@ function requestMatchesSpec(
   if (!request) return false;
 
   const parameters = specOperation.operation.parameters ?? [];
-  assertRequestHeaders(operationId, request, parameters.filter((parameter) => parameter.in === "header"));
-  assertRequestQuery(operationId, request, parameters.filter((parameter) => parameter.in === "query"));
-  assertRequestBody(operationId, request, parameters.find((parameter) => parameter.in === "body"));
+  assertRequestHeaders(
+    operationId,
+    request,
+    parameters.filter((parameter) => parameter.in === "header"),
+  );
+  assertRequestQuery(
+    operationId,
+    request,
+    parameters.filter((parameter) => parameter.in === "query"),
+  );
+  assertRequestBody(
+    operationId,
+    request,
+    parameters.find((parameter) => parameter.in === "body"),
+  );
   return true;
 }
 
-function assertRequestHeaders(operationId: OperationId, request: TransportRequest, headerParameters: SwaggerParameter[]): void {
+function assertRequestHeaders(
+  operationId: OperationId,
+  request: TransportRequest,
+  headerParameters: SwaggerParameter[],
+): void {
   const headers = request.headers ?? {};
   for (const parameter of headerParameters.filter((header) => header.required)) {
     expect(headers[parameter.name], `${operationId} ${parameter.name}`).toEqual(expect.any(String));
@@ -343,8 +362,14 @@ function assertRequestHeaders(operationId: OperationId, request: TransportReques
   }
 }
 
-function assertRequestQuery(operationId: OperationId, request: TransportRequest, queryParameters: SwaggerParameter[]): void {
-  expect(Object.keys(request.query ?? {}).sort(), operationId).toEqual(queryParameters.map((parameter) => parameter.name).sort());
+function assertRequestQuery(
+  operationId: OperationId,
+  request: TransportRequest,
+  queryParameters: SwaggerParameter[],
+): void {
+  expect(Object.keys(request.query ?? {}).sort(), operationId).toEqual(
+    queryParameters.map((parameter) => parameter.name).sort(),
+  );
 }
 
 function assertRequestBody(
@@ -368,14 +393,20 @@ function assertRequestBody(
   }
 
   const bodyKeys = Object.keys(body);
-  expect(bodyKeys.every((key) => allowedKeys.includes(key)), operationId).toBe(true);
-  expect(requiredKeys.every((key) => bodyKeys.includes(key)), operationId).toBe(true);
+  expect(
+    bodyKeys.every((key) => allowedKeys.includes(key)),
+    operationId,
+  ).toBe(true);
+  expect(
+    requiredKeys.every((key) => bodyKeys.includes(key)),
+    operationId,
+  ).toBe(true);
 }
 
 function resolveSchema(schema: SwaggerSchema | undefined): SwaggerSchema {
   if (!schema?.$ref) return schema ?? {};
   const refName = schema.$ref.split("/").at(-1);
-  return refName ? spec.definitions[refName] ?? {} : {};
+  return refName ? (spec.definitions[refName] ?? {}) : {};
 }
 
 function createContractTransport(): FakeTransport {

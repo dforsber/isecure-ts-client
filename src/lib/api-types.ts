@@ -1,11 +1,13 @@
 import type { components, operations } from "../generated/wsapi-v2.js";
 
-type JsonResponse<Operation extends keyof operations, Status extends keyof operations[Operation]["responses"]> =
-  operations[Operation]["responses"][Status] extends {
-    content: { "application/json": infer Body };
-  }
-    ? Body
-    : never;
+type JsonResponse<
+  Operation extends keyof operations,
+  Status extends keyof operations[Operation]["responses"],
+> = operations[Operation]["responses"][Status] extends {
+  content: { "application/json": infer Body };
+}
+  ? Body
+  : never;
 
 type JsonRequest<Operation extends keyof operations> = operations[Operation] extends {
   requestBody: { content: { "application/json": infer Body } };
