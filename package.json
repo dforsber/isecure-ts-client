@@ -22,6 +22,9 @@
     "CHANGELOG.md",
     "LICENSE"
   ],
+  "resolutions": {
+    "js-yaml": "4.2.0"
+  },
   "engines": {
     "node": ">=22"
   },
