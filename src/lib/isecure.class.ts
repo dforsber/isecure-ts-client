@@ -9,19 +9,40 @@ import {
 } from "./auth.js";
 import {
   type ApiResponse,
+  type ConfigCertsRequest,
+  type ConfigCertsResponse,
+  type DeleteFileResponse,
+  type DeleteKeyRequest,
+  type DeleteKeyResponse,
+  type DownloadFileResponse,
+  type EnrollCertRequest,
+  type EnrollCertResponse,
+  type ExportCertQuery,
+  type ExportCertResponse,
+  type ImportCertRequest,
+  type ImportCertResponse,
   type InitLoginResponse,
+  type InitPasswordResetResponse,
   type InitRegisterResponse,
+  type ListAccountsResponse,
+  type ListCertsResponse,
   type ListFilesQuery,
   type ListFilesResponse,
+  type ListKeysResponse,
   type LogLevel,
   type LoginMfaRequest,
   type LoginMfaResponse,
   type LoginRequest,
   type LoginResponse,
   type Mode,
+  type LogoutResponse,
+  type PasswordResetRequest,
+  type PasswordResetResponse,
   type PgpKeyPurpose,
   type RegisterRequest,
   type RegisterResponse,
+  type ShareCertsResponse,
+  type UnshareCertsResponse,
   type UploadFileRequest,
   type UploadKeyRequest,
   type VerifyEmailRequest,
@@ -103,6 +124,45 @@ export class WSChannel {
 
     this.tokens = { ...this.tokens, apiKey: response.data.ApiKey };
     this.logger.debug("registered account", { mode: this.props.Mode, email: this.props.Email });
+    return response.data;
+  }
+
+  async initPasswordReset(): Promise<InitPasswordResetResponse> {
+    const response = await this.transport.request<InitPasswordResetResponse>({
+      method: "GET",
+      url: this.passwordUrl(),
+      headers: this.jsonHeaders(),
+    });
+
+    return response.data;
+  }
+
+  async passwordReset(request: PasswordResetRequest): Promise<PasswordResetResponse>;
+  async passwordReset(code: string, newPassword: string, challenge: string): Promise<PasswordResetResponse>;
+  async passwordReset(
+    requestOrCode: PasswordResetRequest | string,
+    newPassword?: string,
+    challenge?: string,
+  ): Promise<PasswordResetResponse> {
+    const request: PasswordResetRequest =
+      typeof requestOrCode === "string"
+        ? {
+            ChResp: requireValue(challenge, "challenge"),
+            Code: requestOrCode,
+            Encrypted: this.encryptPasswordChallenge(
+              requireValue(challenge, "challenge"),
+              requireValue(newPassword, "newPassword"),
+            ),
+          }
+        : requestOrCode;
+
+    const response = await this.transport.request<PasswordResetResponse, PasswordResetRequest>({
+      method: "POST",
+      url: this.passwordUrl(),
+      body: request,
+      headers: this.jsonHeaders(),
+    });
+
     return response.data;
   }
 
@@ -212,6 +272,28 @@ export class WSChannel {
     return response.data;
   }
 
+  async listKeys(): Promise<ListKeysResponse> {
+    const response = await this.transport.request<ListKeysResponse>({
+      method: "GET",
+      url: this.pgpUrl(),
+      headers: this.authHeaders(),
+    });
+
+    return response.data;
+  }
+
+  async deleteKey(PgpKeyId: string): Promise<DeleteKeyResponse> {
+    const request: DeleteKeyRequest = { PgpKeyId };
+    const response = await this.transport.request<DeleteKeyResponse, DeleteKeyRequest>({
+      method: "DELETE",
+      url: this.pgpUrl(),
+      body: request,
+      headers: this.authHeaders(),
+    });
+
+    return response.data;
+  }
+
   async uploadFile(request: UploadFileRequest): Promise<ApiResponse>;
   async uploadFile(FileContents: string, FileName: string, FileType: string, Signature: string): Promise<ApiResponse>;
   async uploadFile(
@@ -262,6 +344,124 @@ export class WSChannel {
     return response.data;
   }
 
+  async downloadFile(FileType: string, FileReference: string): Promise<DownloadFileResponse> {
+    const response = await this.transport.request<DownloadFileResponse>({
+      method: "GET",
+      url: this.fileUrl(FileType, FileReference),
+      headers: this.authHeaders(),
+    });
+
+    return response.data;
+  }
+
+  async deleteFile(FileType: string, FileReference: string): Promise<DeleteFileResponse> {
+    const response = await this.transport.request<DeleteFileResponse>({
+      method: "DELETE",
+      url: this.fileUrl(FileType, FileReference),
+      headers: this.authHeaders(),
+    });
+
+    return response.data;
+  }
+
+  async listCerts(): Promise<ListCertsResponse> {
+    const response = await this.transport.request<ListCertsResponse>({
+      method: "GET",
+      url: this.certsUrl(),
+      headers: this.authHeaders(),
+    });
+
+    return response.data;
+  }
+
+  async configCerts(requestOrExport: ConfigCertsRequest | string): Promise<ConfigCertsResponse> {
+    const request: ConfigCertsRequest =
+      typeof requestOrExport === "string" ? { Export: requestOrExport } : requestOrExport;
+    const response = await this.transport.request<ConfigCertsResponse, ConfigCertsRequest>({
+      method: "POST",
+      url: this.certsUrl(),
+      body: request,
+      headers: this.authHeaders(),
+    });
+
+    return response.data;
+  }
+
+  async shareCerts(ExtEmail: string): Promise<ShareCertsResponse> {
+    const response = await this.transport.request<ShareCertsResponse>({
+      method: "PUT",
+      url: this.sharedCertsUrl(ExtEmail),
+      headers: this.authHeaders(),
+    });
+
+    return response.data;
+  }
+
+  async unshareCerts(ExtEmail: string): Promise<UnshareCertsResponse> {
+    const response = await this.transport.request<UnshareCertsResponse>({
+      method: "DELETE",
+      url: this.sharedCertsUrl(ExtEmail),
+      headers: this.authHeaders(),
+    });
+
+    return response.data;
+  }
+
+  async exportCert(PgpKeyId: string): Promise<ExportCertResponse> {
+    const query: ExportCertQuery = { PgpKeyId };
+    const response = await this.transport.request<ExportCertResponse>({
+      method: "GET",
+      url: this.certUrl(),
+      query,
+      headers: this.authHeaders(),
+    });
+
+    return response.data;
+  }
+
+  async importCert(request: ImportCertRequest): Promise<ImportCertResponse> {
+    const response = await this.transport.request<ImportCertResponse, ImportCertRequest>({
+      method: "PUT",
+      url: this.certUrl(),
+      body: request,
+      headers: this.authHeaders(),
+    });
+
+    return response.data;
+  }
+
+  async enrollCert(request: EnrollCertRequest): Promise<EnrollCertResponse> {
+    const response = await this.transport.request<EnrollCertResponse, EnrollCertRequest>({
+      method: "POST",
+      url: this.certUrl(),
+      body: request,
+      headers: this.authHeaders(),
+    });
+
+    return response.data;
+  }
+
+  async listAccounts(): Promise<ListAccountsResponse> {
+    const response = await this.transport.request<ListAccountsResponse>({
+      method: "GET",
+      url: this.integratorAccountsUrl(),
+      headers: this.authHeaders(),
+    });
+
+    return response.data;
+  }
+
+  async logout(): Promise<LogoutResponse> {
+    const response = await this.transport.request<LogoutResponse>({
+      method: "DELETE",
+      url: this.sessionUrl(),
+      headers: this.authHeaders(),
+    });
+
+    this.tokens = {};
+    return response.data;
+  }
+
   private async getRegistrationChallenge(): Promise<string> {
     const response = await this.transport.request<InitRegisterResponse>({
       method: "GET",
@@ -287,7 +487,7 @@ export class WSChannel {
     return classifyAuthResponse(this.props.Mode, response, this.tokens);
   }
 
-  private encryptPasswordChallenge(challenge: string): string {
+  private encryptPasswordChallenge(challenge: string, password = this.props.Password): string {
     const timestamp = challenge.split("|")[1];
     if (!timestamp) {
       throw new Error("ISECure challenge did not contain a timestamp");
@@ -299,7 +499,7 @@ export class WSChannel {
           key: this.props.PublicKey,
           padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
         },
-        Buffer.from(`${this.props.Password}||${timestamp}`),
+        Buffer.from(`${password}||${timestamp}`),
       )
       .toString("base64");
   }
@@ -323,8 +523,32 @@ export class WSChannel {
     return this.url("session", this.props.Email, this.props.Mode);
   }
 
+  private passwordUrl(): string {
+    return this.url("account", this.props.Email, this.props.Mode, "password");
+  }
+
   private filesUrl(): string {
     return this.url("files", this.props.Bank);
+  }
+
+  private fileUrl(fileType: string, fileReference: string): string {
+    return this.url("files", this.props.Bank, fileType, fileReference);
+  }
+
+  private certsUrl(): string {
+    return `${this.props.BaseUrl.replace(/\/+$/, "")}/certs/`;
+  }
+
+  private certUrl(): string {
+    return this.url("certs", this.props.Bank);
+  }
+
+  private sharedCertsUrl(extEmail: string): string {
+    return this.url("certs", "shared", extEmail);
+  }
+
+  private integratorAccountsUrl(): string {
+    return this.url("integrator", "accounts");
   }
 
   private pgpUrl(): string {

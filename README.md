@@ -134,19 +134,13 @@ Currently supported:
 
 - `InitRegister`
 - `Register`
+- `InitPasswordReset`
+- `PasswordReset`
 - `InitLogin`
 - `Login`
 - `LoginMFA`
 - `VerifyEmail`
 - `VerifyPhone`
-- `UploadKey`
-- `UploadFile`
-- `ListFiles`
-
-Not yet implemented:
-
-- `InitPasswordReset`
-- `PasswordReset`
 - `ListCerts`
 - `ConfigCerts`
 - `ShareCerts`
@@ -154,6 +148,9 @@ Not yet implemented:
 - `ExportCert`
 - `ImportCert`
 - `EnrollCert`
+- `UploadKey`
+- `UploadFile`
+- `ListFiles`
 - `DownloadFile`
 - `DeleteFile`
 - `ListAccounts`
@@ -161,7 +158,7 @@ Not yet implemented:
 - `DeleteKey`
 - `Logout`
 
-The operation lists are exported as `SUPPORTED_OPERATIONS` and `UNSUPPORTED_OPERATIONS`.
+All operations in `wsapi_v2.json` are now represented by `WSChannel` methods. The operation list is exported as `SUPPORTED_OPERATIONS`; `UNSUPPORTED_OPERATIONS` is empty.
 
 ## Development
 

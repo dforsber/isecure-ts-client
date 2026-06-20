@@ -35,8 +35,9 @@ describe("WSChannel", () => {
   it("documents operation coverage from the generated OpenAPI operation ids", () => {
     expect(SUPPORTED_OPERATIONS).toContain("Login");
     expect(SUPPORTED_OPERATIONS).toContain("ListFiles");
-    expect(UNSUPPORTED_OPERATIONS).toContain("DownloadFile");
-    expect(UNSUPPORTED_OPERATIONS).toContain("Logout");
+    expect(SUPPORTED_OPERATIONS).toContain("DownloadFile");
+    expect(SUPPORTED_OPERATIONS).toContain("Logout");
+    expect(UNSUPPORTED_OPERATIONS).toHaveLength(0);
   });
 
   it("updates mutable account props without rebuilding the client", () => {
@@ -71,6 +72,38 @@ describe("WSChannel", () => {
     });
     expect((transport.requests[1]?.body as { Encrypted?: string }).Encrypted).toEqual(expect.any(String));
     expect(client.session.apiKey).toBe("registered-api-key");
+  });
+
+  it("starts and completes password reset with generated OpenAPI request shapes", async () => {
+    const transport = new FakeTransport();
+    transport.respond((request) => {
+      if (match("GET", "/account/user%40example.test/admin/password")(request)) {
+        return response({ ResponseCode: "00", ResponseText: "SMS sent" });
+      }
+      if (match("POST", "/account/user%40example.test/admin/password")(request)) {
+        return response({ ResponseCode: "00", ResponseText: "Password reset" });
+      }
+      return undefined;
+    });
+
+    const client = new WSChannel(props(), { transport });
+    await expect(client.initPasswordReset()).resolves.toMatchObject({ ResponseCode: "00" });
+    await expect(client.passwordReset("123456", "New-example-password-123!", challenge)).resolves.toMatchObject({
+      ResponseText: "Password reset",
+    });
+    await client.passwordReset({
+      ChResp: challenge,
+      Code: "654321",
+      Encrypted: "pre-encrypted-value",
+    });
+
+    expect(transport.requests[1]?.body).toMatchObject({ ChResp: challenge, Code: "123456" });
+    expect((transport.requests[1]?.body as { Encrypted?: string }).Encrypted).toEqual(expect.any(String));
+    expect(transport.requests[2]?.body).toEqual({
+      ChResp: challenge,
+      Code: "654321",
+      Encrypted: "pre-encrypted-value",
+    });
   });
 
   it("returns typed auth states for MFA and authenticated sessions", async () => {
@@ -318,6 +351,105 @@ describe("WSChannel", () => {
     expect(protectedRequests.every((request) => request.headers?.["x-api-key"] === "api-key")).toBe(true);
     expect(transport.requests[4]?.query).toEqual({ FileType: "VKEUR", Status: "ALL" });
     expect(transport.requests[5]?.query).toEqual({ FileType: "CAMT", Status: "NEW" });
+  });
+
+  it("implements every authenticated WS API operation with typed request and response shapes", async () => {
+    const transport = new FakeTransport();
+    transport.respond((request) => {
+      if (match("GET", "/session/user%40example.test/admin")(request)) {
+        return response({ Challenge: challenge, ResponseCode: "00", ResponseText: "OK" });
+      }
+      if (match("POST", "/session/user%40example.test/admin")(request)) {
+        return response({
+          ApiKey: "api-key",
+          ExpiresIn: "3600",
+          IdToken: "id-token",
+          ResponseCode: "00",
+          ResponseText: "Login OK",
+        });
+      }
+      if (match("GET", "/certs/")(request)) {
+        return response({ Certs: [], ResponseCode: "00", ResponseText: "certs" });
+      }
+      if (match("POST", "/certs/")(request)) {
+        return response({ ResponseCode: "00", ResponseText: "configured" });
+      }
+      if (match("PUT", "/certs/shared/other%40example.test")(request)) {
+        return response({ ResponseCode: "00", ResponseText: "shared", SharedFrom: [], SharedTo: [] }, 201);
+      }
+      if (match("DELETE", "/certs/shared/other%40example.test")(request)) {
+        return response({ ResponseCode: "00", ResponseText: "unshared", SharedFrom: [], SharedTo: [] });
+      }
+      if (match("GET", "/certs/nordea")(request)) {
+        return response({ CertsAndKeys: [], ResponseCode: "00", ResponseText: "exported" });
+      }
+      if (match("PUT", "/certs/nordea")(request)) {
+        return response({ ResponseCode: "00", ResponseText: "imported" }, 201);
+      }
+      if (match("POST", "/certs/nordea")(request)) {
+        return response({ ResponseCode: "00", ResponseText: "enrolled" }, 201);
+      }
+      if (match("GET", "/files/nordea/CAMT/123")(request)) {
+        return response({ Content: "Zm9v", ResponseCode: "00", ResponseText: "downloaded" });
+      }
+      if (match("DELETE", "/files/nordea/CAMT/123")(request)) {
+        return response({ ResponseCode: "00", ResponseText: "deleted" });
+      }
+      if (match("GET", "/integrator/accounts")(request)) {
+        return response({ Accounts: [], ResponseCode: "00", ResponseText: "accounts" });
+      }
+      if (match("GET", "/pgp")(request)) {
+        return response({ PgpKeys: [], ResponseCode: "00", ResponseText: "keys" });
+      }
+      if (match("DELETE", "/pgp")(request)) {
+        return response({ PgpKeys: [], ResponseCode: "00", ResponseText: "deleted key" });
+      }
+      if (match("DELETE", "/session/user%40example.test/admin")(request)) {
+        return response({ ResponseCode: "00", ResponseText: "logged out" });
+      }
+      return undefined;
+    });
+
+    const client = new WSChannel(props(), { transport });
+    await client.login();
+    await expect(client.listCerts()).resolves.toMatchObject({ Certs: [] });
+    await expect(client.configCerts("disabled")).resolves.toMatchObject({ ResponseText: "configured" });
+    await expect(client.configCerts({ Export: "disabled" })).resolves.toMatchObject({ ResponseText: "configured" });
+    await expect(client.shareCerts("other@example.test")).resolves.toMatchObject({ SharedFrom: [] });
+    await expect(client.unshareCerts("other@example.test")).resolves.toMatchObject({ SharedTo: [] });
+    await expect(client.exportCert("3A3A59B2")).resolves.toMatchObject({ CertsAndKeys: [] });
+    await expect(
+      client.importCert({
+        Certificate: "certificate",
+        Company: "EXAMPLE COMPANY",
+        PrivateKey: "private-key",
+        WsUserId: "ws-user",
+      }),
+    ).resolves.toMatchObject({ ResponseText: "imported" });
+    await expect(
+      client.enrollCert({
+        Code: "1234567890",
+        Company: "EXAMPLE COMPANY",
+        WsUserId: "ws-user",
+      }),
+    ).resolves.toMatchObject({ ResponseText: "enrolled" });
+    await expect(client.downloadFile("CAMT", "123")).resolves.toMatchObject({ Content: "Zm9v" });
+    await expect(client.deleteFile("CAMT", "123")).resolves.toMatchObject({ ResponseText: "deleted" });
+    await expect(client.listAccounts()).resolves.toMatchObject({ Accounts: [] });
+    await expect(client.listKeys()).resolves.toMatchObject({ PgpKeys: [] });
+    await expect(client.deleteKey("3A3A59B2")).resolves.toMatchObject({ PgpKeys: [] });
+    await expect(client.logout()).resolves.toMatchObject({ ResponseText: "logged out" });
+
+    const protectedRequests = transport.requests.slice(2);
+    expect(protectedRequests.every((request) => request.headers?.Authorization === "id-token")).toBe(true);
+    expect(protectedRequests.every((request) => request.headers?.["x-api-key"] === "api-key")).toBe(true);
+    expect(transport.requests.find((request) => request.url.endsWith("/certs/nordea"))?.query).toEqual({
+      PgpKeyId: "3A3A59B2",
+    });
+    expect(transport.requests.find((request) => request.method === "DELETE" && request.url.endsWith("/pgp"))?.body).toEqual({
+      PgpKeyId: "3A3A59B2",
+    });
+    expect(client.session).toEqual({});
   });
 
   it("rejects malformed challenges and incomplete legacy upload arguments", async () => {
