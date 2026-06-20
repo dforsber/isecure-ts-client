@@ -27,10 +27,11 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
+      - name: Use npm 11 for trusted publishing
+        run: npm install -g npm@11
+
       - name: Verify release
         run: yarn prepublishOnly
 
       - name: Publish with provenance
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
