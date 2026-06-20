@@ -177,3 +177,15 @@ Important gates:
 - `yarn pack:check` verifies the library-only package payload.
 
 Examples compile separately to `dist-examples`; they are not part of the npm package payload.
+
+## Releases
+
+Semantic versions are prepared by Release Please from conventional commits:
+
+- `fix: ...` creates a patch release.
+- `feat: ...` creates a minor release.
+- `feat!: ...` or `BREAKING CHANGE:` creates a major release.
+
+Release Please opens a version/changelog PR. Merging that PR creates the GitHub release, and the publish workflow publishes the package to npm.
+
+For fully automated publishing, configure repository secret `RELEASE_PLEASE_TOKEN` with a fine-grained GitHub token that can write contents and pull requests. Without that token, Release Please can still open PRs with `GITHUB_TOKEN`, but GitHub releases created by that token will not trigger the npm publish workflow.
