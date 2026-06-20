@@ -1,6 +1,6 @@
 {
   "name": "isecure-ts-client",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "TypeScript SDK for the ISECure WS Channel API",
   "license": "MIT",
   "packageManager": "yarn@1.22.22",

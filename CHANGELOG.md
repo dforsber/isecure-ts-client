@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.0
+
+- Published the first stable SDK release.
+- Covered every operation declared by `wsapi_v2.json`.
+- Added OpenAPI contract tests for operation coverage, paths, methods, headers, query parameters, and request body shapes.
+- Added GitHub Actions CI, npm provenance publishing, package metadata, and release checks.
+- Added typed auth states, prompt adapters, generated OpenAPI types, and focused unit coverage.
+
 ## 0.1.0
 
 - Fixed package shape so the declared entrypoint is `dist/index.js`.
