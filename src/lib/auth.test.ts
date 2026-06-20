@@ -77,4 +77,18 @@ describe("auth state classification", () => {
       responseText: "Unexpected success",
     });
   });
+
+  it("classifies verification prompts from stable response text fragments", () => {
+    expect(
+      classifyAuthResponse(
+        "data",
+        { ResponseCode: "00", ResponseText: "Please VERIFY EMAIL address before login." },
+        {},
+      ),
+    ).toMatchObject({ status: "needs_email_verification" });
+
+    expect(
+      classifyAuthResponse("data", { ResponseCode: "00", ResponseText: "User must verify phone number by SMS." }, {}),
+    ).toMatchObject({ status: "needs_phone_verification" });
+  });
 });

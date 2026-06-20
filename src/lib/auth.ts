@@ -88,7 +88,7 @@ export function classifyAuthResponse(mode: Mode, response: AuthResponse, tokens:
     };
   }
 
-  if (tokens.session || response.ResponseText === "Give SMS code") {
+  if (tokens.session || responseTextIncludes(response, "sms code")) {
     return {
       status: "needs_mfa",
       mode,
@@ -97,7 +97,7 @@ export function classifyAuthResponse(mode: Mode, response: AuthResponse, tokens:
     };
   }
 
-  if (tokens.accessToken || response.ResponseText === "Login OK. Verify email address.") {
+  if (tokens.accessToken || responseTextIncludes(response, "verify email")) {
     return {
       status: "needs_email_verification",
       mode,
@@ -106,7 +106,7 @@ export function classifyAuthResponse(mode: Mode, response: AuthResponse, tokens:
     };
   }
 
-  if (response.ResponseText === "User authentication failed. Verify phone number with received SMS.") {
+  if (responseTextIncludes(response, "verify phone")) {
     return {
       status: "needs_phone_verification",
       mode,
@@ -121,6 +121,10 @@ export function classifyAuthResponse(mode: Mode, response: AuthResponse, tokens:
     responseText: response.ResponseText,
     response,
   };
+}
+
+function responseTextIncludes(response: { ResponseText: string }, expectedText: string): boolean {
+  return response.ResponseText.toLowerCase().includes(expectedText);
 }
 
 export function classifyVerificationResponse(

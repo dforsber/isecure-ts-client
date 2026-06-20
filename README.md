@@ -163,7 +163,10 @@ All operations in `wsapi_v2.json` are now represented by `WSChannel` methods. Th
 ## Development
 
 ```sh
-yarn install
+yarn install --frozen-lockfile
+yarn audit
+yarn format:check
+yarn lint
 yarn typecheck
 yarn test
 yarn pack:check
@@ -172,6 +175,9 @@ yarn pack:check
 Important gates:
 
 - `yarn generate:types` converts Swagger 2.0 to OpenAPI 3.0 and generates TypeScript types.
+- `yarn audit` checks dependency advisories.
+- `yarn format:check` checks Prettier formatting.
+- `yarn lint` runs ESLint with type-aware rules.
 - `yarn typecheck` runs strict TypeScript for the SDK and examples.
 - `yarn test` runs Vitest with coverage thresholds.
 - `yarn pack:check` verifies the library-only package payload.
@@ -188,4 +194,4 @@ Semantic versions are prepared by Release Please from conventional commits:
 
 Release Please opens a version/changelog PR. Merging that PR creates the GitHub release, and the publish workflow publishes the package to npm.
 
-For fully automated publishing, configure repository secret `RELEASE_PLEASE_TOKEN` with a fine-grained GitHub token that can write contents and pull requests. Without that token, Release Please can still open PRs with `GITHUB_TOKEN`, but GitHub releases created by that token will not trigger the npm publish workflow.
+Fully automated publishing requires repository secret `RELEASE_PLEASE_TOKEN` with a fine-grained GitHub token that can write contents, pull requests, and issues. The release workflow intentionally fails without that secret, because GitHub releases created by `GITHUB_TOKEN` do not trigger the npm publish workflow.
