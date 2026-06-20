@@ -1,2 +1,3 @@
+*.pem
 encrypted.txt
 py_encrypted.txt

@@ -7,12 +7,36 @@ The checked-in OpenAPI contract is [`wsapi_v2.json`](wsapi_v2.json). The live so
 ## Install
 
 ```sh
-yarn add isecure-ts-client
+npm install isecure-ts-client
 ```
 
 ```ts
 import { WSChannel } from "isecure-ts-client";
 ```
+
+## Customer Start Steps
+
+1. Install `isecure-ts-client`.
+2. Configure account, bank, endpoint, password, and RSA public key values.
+3. Create `WSChannel`.
+4. Call `register()` for first-time account setup, or `login()` for an existing account.
+5. Complete any returned auth state: MFA, email verification, or phone verification.
+6. Use supported operations such as `listFiles`, `uploadFile`, and `uploadPgpKey`.
+
+## Configuration
+
+| Environment variable | Required | Description |
+| --- | --- | --- |
+| `ISECURE_BASE_URL` | No | API endpoint. Defaults to `https://ws-api.test.isecure.fi/v2` in examples. |
+| `ISECURE_API_KEY` | No | Existing integrator API key. Use `0` or omit for initial integrator registration. |
+| `ISECURE_COMPANY` | Yes | Company name for registration. |
+| `ISECURE_NAME` | Yes | Full user name for registration. |
+| `ISECURE_EMAIL` | Yes | Account email address. |
+| `ISECURE_PHONE` | Yes | Phone number with country code, for example `+358401234567`. |
+| `ISECURE_PASSWORD` | Yes | Account password. |
+| `ISECURE_PUBLIC_KEY_PEM` | Yes | ISECure RSA public key in PEM format. |
+| `ISECURE_MODE` | No | `admin` or `data`. Defaults to `data` in examples. |
+| `ISECURE_BANK` | No | Bank identifier. Defaults to `nordea` in examples. |
 
 ## Basic Usage
 
@@ -35,6 +59,40 @@ const state = await client.login();
 if (state.status === "authenticated") {
   const files = await client.listFiles({ Status: "ALL" });
   console.log(files.FileDescriptors);
+}
+```
+
+## First Registration
+
+```ts
+const registration = await client.register();
+console.log(registration.ApiKey);
+
+let state = await client.login();
+
+while (state.status !== "authenticated") {
+  if (state.status === "needs_mfa") {
+    state = await client.submitMfaCode("123456");
+    continue;
+  }
+
+  if (state.status === "needs_email_verification") {
+    await client.verifyEmail("123456");
+    state = await client.login();
+    continue;
+  }
+
+  if (state.status === "needs_phone_verification") {
+    await client.verifyPhone("123456");
+    state = await client.login();
+    continue;
+  }
+
+  if (state.status === "failed") {
+    throw new Error(state.responseText);
+  }
+
+  state = await client.login();
 }
 ```
 

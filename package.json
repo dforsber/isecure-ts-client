@@ -3,7 +3,25 @@
   "version": "0.1.0",
   "description": "TypeScript SDK for the ISECure WS Channel API",
   "license": "MIT",
+  "packageManager": "yarn@1.22.22",
   "type": "module",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dforsber/isecure-ts-client.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dforsber/isecure-ts-client/issues"
+  },
+  "homepage": "https://github.com/dforsber/isecure-ts-client#readme",
+  "keywords": [
+    "isecure",
+    "ws-channel",
+    "banking",
+    "sepa",
+    "typescript",
+    "sdk"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -28,6 +46,9 @@
   "engines": {
     "node": ">=22"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "clean": "rm -rf dist dist-examples coverage .generated",
     "generate:types": "mkdir -p .generated src/generated && swagger2openapi wsapi_v2.json -o .generated/wsapi_v2.openapi.json && openapi-typescript .generated/wsapi_v2.openapi.json -o src/generated/wsapi-v2.ts",
@@ -47,7 +68,6 @@
     "@types/node": "^26.0.0",
     "@vitest/coverage-v8": "^4.1.9",
     "openapi-typescript": "^7.13.0",
-    "openpgp": "^6.3.1",
     "swagger2openapi": "^7.0.8",
     "typescript": "5.9.3",
     "vite": "^8.0.16",
