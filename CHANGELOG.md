@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/dforsber/isecure-ts-client/compare/isecure-ts-client-v1.0.1...isecure-ts-client-v1.1.0) (2026-06-20)
+
+
+### Features
+
+* support browser bundlers ([33d3b89](https://github.com/dforsber/isecure-ts-client/commit/33d3b89333e042060f9bc681a8ab5ec938feeb89))
+
 ## 1.0.1
 
 - Tightened release automation so semantic releases fail clearly when `RELEASE_PLEASE_TOKEN` is missing.
