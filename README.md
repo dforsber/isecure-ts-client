@@ -195,3 +195,12 @@ Semantic versions are prepared by Release Please from conventional commits:
 Release Please opens a version/changelog PR. Merging that PR creates the GitHub release, and the publish workflow publishes the package to npm.
 
 Fully automated publishing requires repository secret `RELEASE_PLEASE_TOKEN` with a fine-grained GitHub token that can write contents, pull requests, and issues. The release workflow intentionally fails without that secret, because GitHub releases created by `GITHUB_TOKEN` do not trigger the npm publish workflow.
+
+The npm package must also be configured with a trusted publisher:
+
+- Publisher: GitHub Actions
+- Organization or user: `dforsber`
+- Repository: `isecure-ts-client`
+- Workflow filename: `publish.yml`
+- Environment name: `npm`
+- Allowed action: `npm publish`
