@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { SUPPORTED_OPERATIONS, UNSUPPORTED_OPERATIONS } from "./api-types.js";
-import { WSChannel, type IWSChannel } from "./isecure.class.js";
+import { WSChannel, type IWSChannel, type Logger } from "./isecure.class.js";
 import { FakeTransport, type TransportRequest, type TransportResponse } from "./transport.js";
 
 const publicKey = readFileSync(new URL("../../examples/gpg-encryption-test/test.pem", import.meta.url), "utf8");
@@ -44,6 +44,34 @@ describe("WSChannel", () => {
     const client = new WSChannel(props({ Mode: "admin" }));
     client.updateProps({ Mode: "data", Bank: "osuuspankki" });
     expect(client.props).toMatchObject({ Mode: "data", Bank: "osuuspankki" });
+  });
+
+  it("honors configured log levels for injected loggers", async () => {
+    const messages: string[] = [];
+    const logger: Logger = {
+      debug(message) {
+        messages.push(message);
+      },
+      info() {},
+      warn() {},
+      error() {},
+    };
+    const transport = new FakeTransport();
+    transport.respond((request) => {
+      if (match("GET", "/account/user%40example.test/admin")(request)) {
+        return response({ Challenge: challenge, ResponseCode: "00", ResponseText: "OK" });
+      }
+      if (match("PUT", "/account/user%40example.test/admin")(request)) {
+        return response({ ApiKey: "registered-api-key", ResponseCode: "00", ResponseText: "Created" }, 201);
+      }
+      return undefined;
+    });
+
+    await new WSChannel(props({ LogLevel: "silent" }), { transport, logger }).register();
+    expect(messages).toEqual([]);
+
+    await new WSChannel(props({ LogLevel: "debug" }), { transport, logger }).register();
+    expect(messages).toEqual(["registered account"]);
   });
 
   it("registers with a challenge response body generated from the OpenAPI Register request shape", async () => {
@@ -157,6 +185,7 @@ describe("WSChannel", () => {
 
     await expect(client.submitMfaCode("123456")).rejects.toThrow("before login returns a session token");
     await expect(client.verifyEmail("123456")).rejects.toThrow("before login returns an access token");
+    await expect(client.listFiles()).rejects.toThrow("before login returns an id token and API key");
   });
 
   it("uses prompt adapters without importing terminal IO into the library", async () => {

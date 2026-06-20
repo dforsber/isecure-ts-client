@@ -6,10 +6,25 @@ import { FakeTransport, type TransportRequest, type TransportResponse } from "./
 
 interface SwaggerOperation {
   operationId: OperationId;
+  parameters?: SwaggerParameter[];
 }
 
 interface SwaggerSpec {
   paths: Record<string, Record<string, SwaggerOperation>>;
+  definitions: Record<string, SwaggerSchema>;
+}
+
+interface SwaggerParameter {
+  in: "body" | "header" | "path" | "query";
+  name: string;
+  required?: boolean;
+  schema?: SwaggerSchema;
+}
+
+interface SwaggerSchema {
+  $ref?: string;
+  properties?: Record<string, unknown>;
+  required?: string[];
 }
 
 interface OperationContract {
@@ -235,12 +250,15 @@ describe("OpenAPI contract honesty", () => {
     }
   });
 
-  it("emits the HTTP method and path declared by wsapi_v2.json for every operation", async () => {
+  it("emits the HTTP method, path, headers, query, and body shape declared by wsapi_v2.json", async () => {
     const operationsById = operationsFromSpec();
 
     for (const operationId of SUPPORTED_OPERATIONS) {
       const operation = operationsById.get(operationId);
       const operationContract = contract[operationId];
+      if (!operation) {
+        throw new Error(`Missing OpenAPI operation ${operationId}`);
+      }
       expect(operation, operationId).toMatchObject({
         method: operationContract.method,
         path: operationContract.path,
@@ -258,6 +276,7 @@ describe("OpenAPI contract honesty", () => {
       expect(request, operationId).toBeDefined();
       expect(request?.method, operationId).toBe(operationContract.method);
       expect(pathname(request?.url), operationId).toBe(fillPath(operationContract.path));
+      expect(requestMatchesSpec(operationId, request, operation)).toBe(true);
     }
   });
 });
@@ -287,14 +306,76 @@ function operationIdsFromSpec(): OperationId[] {
   return [...operationsFromSpec().keys()].sort();
 }
 
-function operationsFromSpec(): Map<OperationId, { method: string; path: string }> {
-  const operations = new Map<OperationId, { method: string; path: string }>();
+function operationsFromSpec(): Map<OperationId, { method: string; path: string; operation: SwaggerOperation }> {
+  const operations = new Map<OperationId, { method: string; path: string; operation: SwaggerOperation }>();
   for (const [path, methods] of Object.entries(spec.paths)) {
     for (const [method, operation] of Object.entries(methods)) {
-      operations.set(operation.operationId, { method: method.toUpperCase(), path });
+      operations.set(operation.operationId, { method: method.toUpperCase(), path, operation });
     }
   }
   return operations;
+}
+
+function requestMatchesSpec(
+  operationId: OperationId,
+  request: TransportRequest | undefined,
+  specOperation: { operation: SwaggerOperation },
+): boolean {
+  expect(request, operationId).toBeDefined();
+  if (!request) return false;
+
+  const parameters = specOperation.operation.parameters ?? [];
+  assertRequestHeaders(operationId, request, parameters.filter((parameter) => parameter.in === "header"));
+  assertRequestQuery(operationId, request, parameters.filter((parameter) => parameter.in === "query"));
+  assertRequestBody(operationId, request, parameters.find((parameter) => parameter.in === "body"));
+  return true;
+}
+
+function assertRequestHeaders(operationId: OperationId, request: TransportRequest, headerParameters: SwaggerParameter[]): void {
+  const headers = request.headers ?? {};
+  for (const parameter of headerParameters.filter((header) => header.required)) {
+    expect(headers[parameter.name], `${operationId} ${parameter.name}`).toEqual(expect.any(String));
+  }
+
+  if (headerParameters.length === 0) {
+    expect(headers.Authorization, operationId).toBeUndefined();
+    expect(headers["x-api-key"], operationId).toBeUndefined();
+  }
+}
+
+function assertRequestQuery(operationId: OperationId, request: TransportRequest, queryParameters: SwaggerParameter[]): void {
+  expect(Object.keys(request.query ?? {}).sort(), operationId).toEqual(queryParameters.map((parameter) => parameter.name).sort());
+}
+
+function assertRequestBody(
+  operationId: OperationId,
+  request: TransportRequest,
+  bodyParameter: SwaggerParameter | undefined,
+): void {
+  if (!bodyParameter) {
+    expect(request.body, operationId).toBeUndefined();
+    return;
+  }
+
+  const schema = resolveSchema(bodyParameter.schema);
+  const allowedKeys = Object.keys(schema.properties ?? {});
+  const requiredKeys = schema.required ?? [];
+  const body = request.body;
+
+  expect(body, operationId).toEqual(expect.any(Object));
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return;
+  }
+
+  const bodyKeys = Object.keys(body);
+  expect(bodyKeys.every((key) => allowedKeys.includes(key)), operationId).toBe(true);
+  expect(requiredKeys.every((key) => bodyKeys.includes(key)), operationId).toBe(true);
+}
+
+function resolveSchema(schema: SwaggerSchema | undefined): SwaggerSchema {
+  if (!schema?.$ref) return schema ?? {};
+  const refName = schema.$ref.split("/").at(-1);
+  return refName ? spec.definitions[refName] ?? {} : {};
 }
 
 function createContractTransport(): FakeTransport {

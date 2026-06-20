@@ -76,6 +76,14 @@ export interface Logger {
   error(message: string, meta?: unknown): void;
 }
 
+const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
+  silent: 0,
+  error: 1,
+  warn: 2,
+  info: 3,
+  debug: 4,
+};
+
 class NoopLogger implements Logger {
   debug(): void {}
   info(): void {}
@@ -123,7 +131,7 @@ export class WSChannel {
     });
 
     this.tokens = { ...this.tokens, apiKey: response.data.ApiKey };
-    this.logger.debug("registered account", { mode: this.props.Mode, email: this.props.Email });
+    this.log("debug", "registered account", { mode: this.props.Mode, email: this.props.Email });
     return response.data;
   }
 
@@ -209,7 +217,7 @@ export class WSChannel {
       method: "POST",
       url: `${this.accountUrl()}/${encodeURIComponent(this.props.Phone)}`,
       body: request,
-      headers: this.authHeaders(),
+      headers: this.jsonHeaders(),
     });
 
     return classifyVerificationResponse(this.props.Mode, "phone", response.data);
@@ -225,7 +233,7 @@ export class WSChannel {
       method: "POST",
       url: this.accountUrl(),
       body: request,
-      headers: this.authHeaders(),
+      headers: this.jsonHeaders(),
     });
 
     return classifyVerificationResponse(this.props.Mode, "email", response.data);
@@ -487,6 +495,12 @@ export class WSChannel {
     return classifyAuthResponse(this.props.Mode, response, this.tokens);
   }
 
+  private log(level: Exclude<LogLevel, "silent">, message: string, meta?: unknown): void {
+    if (LOG_LEVEL_PRIORITY[this.props.LogLevel ?? "debug"] >= LOG_LEVEL_PRIORITY[level]) {
+      this.logger[level](message, meta);
+    }
+  }
+
   private encryptPasswordChallenge(challenge: string, password = this.props.Password): string {
     const timestamp = challenge.split("|")[1];
     if (!timestamp) {
@@ -505,9 +519,13 @@ export class WSChannel {
   }
 
   private authHeaders(): HttpHeaders {
+    if (!this.tokens.idToken || !this.tokens.apiKey) {
+      throw new Error("Cannot call authenticated ISECure operation before login returns an id token and API key");
+    }
+
     const headers = this.jsonHeaders();
-    if (this.tokens.idToken) headers.Authorization = this.tokens.idToken;
-    if (this.tokens.apiKey) headers["x-api-key"] = this.tokens.apiKey;
+    headers.Authorization = this.tokens.idToken;
+    headers["x-api-key"] = this.tokens.apiKey;
     return headers;
   }
 

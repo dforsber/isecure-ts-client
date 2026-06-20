@@ -65,7 +65,7 @@
     "axios": "^1.18.0"
   },
   "devDependencies": {
-    "@types/node": "^26.0.0",
+    "@types/node": "^22",
     "@vitest/coverage-v8": "^4.1.9",
     "openapi-typescript": "^7.13.0",
     "swagger2openapi": "^7.0.8",
