@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1
+
+- Tightened release automation so semantic releases fail clearly when `RELEASE_PLEASE_TOKEN` is missing.
+- Documented the full local quality gate sequence.
+- Exported the remaining OpenAPI-derived request and response aliases from the root SDK entrypoint.
+- Made auth prompt classification more tolerant of response text wording changes.
+
 ## 1.0.0
 
 - Published the first stable SDK release.
