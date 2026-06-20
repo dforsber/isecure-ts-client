@@ -2,6 +2,7 @@
 coverage/
 dist/
 dist-examples/
+.browser-check/
 node_modules/
 src/generated/
 wsapi_v2.json

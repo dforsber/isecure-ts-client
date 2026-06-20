@@ -6,6 +6,7 @@
 - Documented the full local quality gate sequence.
 - Exported the remaining OpenAPI-derived request and response aliases from the root SDK entrypoint.
 - Made auth prompt classification more tolerant of response text wording changes.
+- Added browser bundler support by replacing Node-only challenge encryption with WebCrypto-compatible encryption and adding a browser bundle quality gate.
 
 ## 1.0.0
 

@@ -124,6 +124,12 @@ await client.loginWithPrompt({
 });
 ```
 
+## Runtime Support
+
+The SDK supports Node.js and modern browser bundlers. Password challenge encryption uses WebCrypto-compatible RSA-OAEP with SHA-1, so browser runtimes must provide `globalThis.crypto.subtle`.
+
+Browser applications also need the ISECure WS API endpoint to allow the application origin with CORS. Avoid exposing production passwords, API keys, or id tokens in untrusted browser code; for most customer-facing web apps, run this SDK on your backend and call that backend from the browser.
+
 The runnable terminal implementation lives in [`examples/full-workflow/full-workflow.ts`](examples/full-workflow/full-workflow.ts).
 
 ## Supported Operations
@@ -169,6 +175,7 @@ yarn format:check
 yarn lint
 yarn typecheck
 yarn test
+yarn browser:check
 yarn pack:check
 ```
 
@@ -180,6 +187,7 @@ Important gates:
 - `yarn lint` runs ESLint with type-aware rules.
 - `yarn typecheck` runs strict TypeScript for the SDK and examples.
 - `yarn test` runs Vitest with coverage thresholds.
+- `yarn browser:check` verifies the package entrypoint bundles for browser targets.
 - `yarn pack:check` verifies the library-only package payload.
 
 Examples compile separately to `dist-examples`; they are not part of the npm package payload.

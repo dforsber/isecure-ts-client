@@ -41,5 +41,8 @@ jobs:
       - name: Test
         run: yarn test
 
+      - name: Check browser bundle
+        run: yarn browser:check
+
       - name: Check package payload
         run: yarn pack:check

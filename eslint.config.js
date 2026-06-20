@@ -4,7 +4,15 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: [".generated/**", "coverage/**", "dist/**", "dist-examples/**", "node_modules/**", "src/generated/**"],
+    ignores: [
+      ".browser-check/**",
+      ".generated/**",
+      "coverage/**",
+      "dist/**",
+      "dist-examples/**",
+      "node_modules/**",
+      "src/generated/**",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked.map((config) => ({ ...config, files: ["**/*.ts"] })),

@@ -24,13 +24,16 @@
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "browser": "./dist/index.js",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "browser": "./dist/index.js",
       "import": "./dist/index.js"
     },
     "./wsapi-types": {
       "types": "./dist/generated/wsapi-v2.d.ts",
+      "browser": "./dist/generated/wsapi-v2.js",
       "import": "./dist/generated/wsapi-v2.js"
     }
   },
@@ -50,7 +53,7 @@
     "access": "public"
   },
   "scripts": {
-    "clean": "rm -rf dist dist-examples coverage .generated",
+    "clean": "rm -rf dist dist-examples coverage .generated .browser-check",
     "generate:types": "mkdir -p .generated src/generated && swagger2openapi wsapi_v2.json -o .generated/wsapi_v2.openapi.json && openapi-typescript .generated/wsapi_v2.openapi.json -o src/generated/wsapi-v2.ts",
     "build": "rm -rf dist && yarn generate:types && tsc -p tsconfig.json",
     "build:examples": "rm -rf dist-examples && tsc -p tsconfig.examples.json",
@@ -60,8 +63,9 @@
     "typecheck": "yarn generate:types && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.examples.json --noEmit",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
+    "browser:check": "vite build --config vite.browser.config.ts",
     "pack:check": "yarn build && NPM_CONFIG_CACHE=${TMPDIR:-/tmp}/isecure-npm-cache npm pack --dry-run",
-    "prepublishOnly": "yarn format:check && yarn lint && yarn typecheck && yarn test && yarn pack:check",
+    "prepublishOnly": "yarn format:check && yarn lint && yarn typecheck && yarn test && yarn browser:check && yarn pack:check",
     "example:workflow": "yarn build:examples && node dist-examples/examples/full-workflow/full-workflow.js"
   },
   "dependencies": {

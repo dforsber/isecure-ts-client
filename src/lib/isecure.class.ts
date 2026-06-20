@@ -1,4 +1,3 @@
-import * as crypto from "node:crypto";
 import {
   classifyAuthResponse,
   classifyVerificationResponse,
@@ -48,6 +47,7 @@ import {
   type VerifyEmailRequest,
   type VerifyPhoneRequest,
 } from "./api-types.js";
+import { encryptPasswordChallenge } from "./challenge-crypto.js";
 import { AxiosTransport, type HttpHeaders, type Transport } from "./transport.js";
 
 export interface IWSChannel {
@@ -118,7 +118,7 @@ export class WSChannel {
       ApiKey: this.props.ApiKey ?? "0",
       ChResp,
       Company: this.props.Company,
-      Encrypted: this.encryptPasswordChallenge(ChResp),
+      Encrypted: await this.encryptPasswordChallenge(ChResp),
       Name: this.props.Name,
       Phone: this.props.Phone,
     };
@@ -157,7 +157,7 @@ export class WSChannel {
         ? {
             ChResp: requireValue(challenge, "challenge"),
             Code: requestOrCode,
-            Encrypted: this.encryptPasswordChallenge(
+            Encrypted: await this.encryptPasswordChallenge(
               requireValue(challenge, "challenge"),
               requireValue(newPassword, "newPassword"),
             ),
@@ -178,7 +178,7 @@ export class WSChannel {
     const ChResp = await this.getSessionChallenge();
     const request: LoginRequest = {
       ChResp,
-      Encrypted: this.encryptPasswordChallenge(ChResp),
+      Encrypted: await this.encryptPasswordChallenge(ChResp),
     };
 
     const response = await this.transport.request<LoginResponse, LoginRequest>({
@@ -501,21 +501,8 @@ export class WSChannel {
     }
   }
 
-  private encryptPasswordChallenge(challenge: string, password = this.props.Password): string {
-    const timestamp = challenge.split("|")[1];
-    if (!timestamp) {
-      throw new Error("ISECure challenge did not contain a timestamp");
-    }
-
-    return crypto
-      .publicEncrypt(
-        {
-          key: this.props.PublicKey,
-          padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-        },
-        Buffer.from(`${password}||${timestamp}`),
-      )
-      .toString("base64");
+  private encryptPasswordChallenge(challenge: string, password = this.props.Password): Promise<string> {
+    return encryptPasswordChallenge(this.props.PublicKey, challenge, password);
   }
 
   private authHeaders(): HttpHeaders {
