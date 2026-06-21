@@ -4,6 +4,7 @@ import {
   mergeTokens,
   type AuthPromptAdapter,
   type AuthState,
+  type AuthStep,
   type SessionTokens,
 } from "./auth.js";
 import {
@@ -48,7 +49,7 @@ import {
   type VerifyPhoneRequest,
 } from "./api-types.js";
 import { encryptPasswordChallenge } from "./challenge-crypto.js";
-import { AxiosTransport, type HttpHeaders, type Transport } from "./transport.js";
+import { AxiosTransport, LoggingTransport, type HttpHeaders, type Transport } from "./transport.js";
 
 export interface IWSChannel {
   Company: string;
@@ -100,8 +101,11 @@ export class WSChannel {
     public props: IWSChannel,
     options: WSChannelOptions = {},
   ) {
-    this.transport = options.transport ?? new AxiosTransport();
     this.logger = options.logger ?? new NoopLogger();
+    this.transport = new LoggingTransport(options.transport ?? new AxiosTransport(), {
+      logger: this.logger,
+      enabled: () => LOG_LEVEL_PRIORITY[this.props.LogLevel ?? "debug"] >= LOG_LEVEL_PRIORITY.debug,
+    });
   }
 
   get session(): Readonly<SessionTokens> {
@@ -239,12 +243,32 @@ export class WSChannel {
     return classifyVerificationResponse(this.props.Mode, "email", response.data);
   }
 
+  /**
+   * Drives the full login -> verify -> re-login state machine to completion
+   * using the supplied prompt adapter. Bounded by `maxTransitions`. Instead of
+   * throwing when the flow does not settle, it returns a typed `stalled` state
+   * naming the step the backend keeps re-requesting, so callers never have to
+   * re-implement the loop or guess where it got stuck.
+   */
   async loginWithPrompt(prompt: AuthPromptAdapter, maxTransitions = 8): Promise<AuthState> {
     let state = await this.login();
+    const driven: Partial<Record<AuthStep, number>> = {};
+    let lastStep: AuthStep | undefined;
 
     for (let transition = 0; transition < maxTransitions; transition += 1) {
-      if (state.status === "authenticated" || state.status === "failed") {
+      if (state.status === "authenticated" || state.status === "failed" || state.status === "stalled") {
         return state;
+      }
+
+      const step = promptStepFor(state.status);
+      if (step) {
+        // We already satisfied this step once; the backend re-requesting it
+        // means an accepted verification did not advance the login.
+        if ((driven[step] ?? 0) >= 1) {
+          return { status: "stalled", mode: this.props.Mode, step, transitions: transition, response: state.response };
+        }
+        driven[step] = (driven[step] ?? 0) + 1;
+        lastStep = step;
       }
 
       if (state.status === "needs_mfa") {
@@ -265,7 +289,8 @@ export class WSChannel {
       state = await this.login();
     }
 
-    throw new Error("Authentication did not settle before maxTransitions was reached");
+    const step = promptStepFor(state.status) ?? lastStep ?? "mfa";
+    return { status: "stalled", mode: this.props.Mode, step, transitions: maxTransitions, response: state.response };
   }
 
   async uploadPgpKey(armoredKey: string, purpose: PgpKeyPurpose): Promise<ApiResponse> {
@@ -562,6 +587,19 @@ export class WSChannel {
 
   private url(...segments: string[]): string {
     return `${this.props.BaseUrl.replace(/\/+$/, "")}/${segments.map(encodeURIComponent).join("/")}`;
+  }
+}
+
+function promptStepFor(status: AuthState["status"]): AuthStep | undefined {
+  switch (status) {
+    case "needs_mfa":
+      return "mfa";
+    case "needs_email_verification":
+      return "email_verification";
+    case "needs_phone_verification":
+      return "phone_verification";
+    default:
+      return undefined;
   }
 }
 

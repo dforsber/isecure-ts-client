@@ -3,6 +3,7 @@ coverage/
 dist/
 dist-examples/
 .browser-check/
+.chrome-wsapi-playwright/
 node_modules/
 src/generated/
 wsapi_v2.json

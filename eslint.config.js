@@ -6,6 +6,7 @@ export default tseslint.config(
   {
     ignores: [
       ".browser-check/**",
+      ".chrome-wsapi-playwright/**",
       ".generated/**",
       "coverage/**",
       "dist/**",
