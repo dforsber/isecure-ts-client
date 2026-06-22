@@ -4,7 +4,13 @@
     ".": {
       "release-type": "node",
       "package-name": "isecure-ts-client",
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "src/lib/version.ts"
+        }
+      ]
     }
   }
 }
