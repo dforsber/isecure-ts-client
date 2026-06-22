@@ -1,4 +1,5 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from "axios";
+import { USER_AGENT } from "./version.js";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 export type HttpHeaders = Record<string, string>;
@@ -24,6 +25,14 @@ export interface Transport {
   ): Promise<TransportResponse<ResponseBody>>;
 }
 
+/**
+ * `User-Agent` is a forbidden header in browsers (the runtime drops it and
+ * logs a console warning), so it is only attached on Node-like runtimes.
+ */
+function isNodeRuntime(): boolean {
+  return typeof process !== "undefined" && process.versions?.node != null && typeof window === "undefined";
+}
+
 export class AxiosTransport implements Transport {
   constructor(private readonly client: AxiosInstance = axios.create()) {}
 
@@ -36,7 +45,12 @@ export class AxiosTransport implements Transport {
     };
     if (request.query) config.params = request.query;
     if (request.body !== undefined) config.data = request.body;
-    if (request.headers) config.headers = request.headers;
+
+    const headers: HttpHeaders = { ...request.headers };
+    if (isNodeRuntime() && headers["User-Agent"] === undefined) {
+      headers["User-Agent"] = USER_AGENT;
+    }
+    if (Object.keys(headers).length > 0) config.headers = headers;
 
     const response = await this.client.request<ResponseBody, AxiosResponse<ResponseBody>, RequestBody>(config);
 

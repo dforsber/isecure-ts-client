@@ -1,4 +1,6 @@
 export { WSChannel, type IWSChannel, type Logger, type WSChannelOptions } from "./lib/isecure.class.js";
+export { isLogLevel, isMode, parseLogLevel, parseMode } from "./lib/guards.js";
+export { SDK_VERSION, USER_AGENT } from "./lib/version.js";
 export {
   classifyErrorReason,
   type AuthErrorReason,

@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { WSChannel, type AuthPromptAdapter, type AuthState, type IWSChannel } from "../../src/index.js";
+import { parseMode, WSChannel, type AuthPromptAdapter, type AuthState, type IWSChannel } from "../../src/index.js";
 
 class TerminalPromptAdapter implements AuthPromptAdapter {
   async requestMfaCode(): Promise<string> {
@@ -44,7 +44,7 @@ function configFromEnv(): IWSChannel {
     PublicKey: requiredEnv("ISECURE_PUBLIC_KEY_PEM"),
     BaseUrl: process.env.ISECURE_BASE_URL ?? "https://ws-api.test.isecure.fi/v2",
     Email: requiredEnv("ISECURE_EMAIL"),
-    Mode: (process.env.ISECURE_MODE ?? "data") as IWSChannel["Mode"],
+    Mode: parseMode(process.env.ISECURE_MODE ?? "data"),
     Bank: process.env.ISECURE_BANK ?? "nordea",
   };
 }
