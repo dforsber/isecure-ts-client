@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AxiosTransport, FakeTransport, type TransportRequest } from "./transport.js";
+import { AxiosTransport, FakeTransport, LoggingTransport, type Transport, type TransportRequest } from "./transport.js";
 import { ISecureAbortError, ISecureHttpError, ISecureNetworkError } from "./errors.js";
 import { USER_AGENT } from "./version.js";
 
@@ -190,6 +190,50 @@ describe("transport adapters", () => {
 
     expect(response.status).toBe(200);
     expect(calls).toHaveLength(1);
+  });
+
+  it("honors a numeric Retry-After header on a retryable status", async () => {
+    const client = recordingClient((_config, attempt) =>
+      attempt < 1 ? { status: 503, statusText: "Unavailable", data: {}, headers: { "retry-after": "0" } } : ok,
+    );
+    const transport = new AxiosTransport({ client: client as never, retryBaseDelayMs: 0, random: () => 0 });
+
+    const response = await transport.request({ method: "GET", url: "https://example.test/x" });
+    expect(response.status).toBe(200);
+    expect(client.calls).toHaveLength(2);
+  });
+
+  it("parses an HTTP-date Retry-After header (capped by maxRetryDelayMs)", async () => {
+    const client = recordingClient((_config, attempt) =>
+      attempt < 1
+        ? { status: 429, statusText: "Too Many", data: {}, headers: { "retry-after": "Wed, 21 Oct 2099 07:28:00 GMT" } }
+        : ok,
+    );
+    const transport = new AxiosTransport({
+      client: client as never,
+      retryBaseDelayMs: 0,
+      maxRetryDelayMs: 0,
+      random: () => 0,
+    });
+
+    const response = await transport.request({ method: "POST", url: "https://example.test/x" });
+    expect(response.status).toBe(200);
+    expect(client.calls).toHaveLength(2);
+  });
+
+  it("LoggingTransport logs (with redacted URL) and rethrows when the inner transport fails", async () => {
+    const messages: string[] = [];
+    const inner: Transport = { request: () => Promise.reject(new Error("boom")) };
+    const logging = new LoggingTransport(inner, { logger: { debug: (message) => messages.push(message) } });
+
+    await expect(
+      logging.request({ method: "GET", url: "https://api.test/v2/account/user%40example.test/admin/%2B358401234567" }),
+    ).rejects.toThrow("boom");
+
+    const errorLine = messages.find((message) => message.startsWith("error GET"));
+    expect(errorLine).toBeDefined();
+    expect(errorLine).not.toContain("user%40example.test");
+    expect(errorLine).not.toContain("%2B358401234567");
   });
 
   it("throws useful fake transport errors for missing handlers", async () => {
