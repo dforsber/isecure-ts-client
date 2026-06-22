@@ -49,6 +49,7 @@ import {
   type VerifyPhoneRequest,
 } from "./api-types.js";
 import { encryptPasswordChallenge } from "./challenge-crypto.js";
+import type { RedactionMode } from "./redact.js";
 import {
   AxiosTransport,
   LoggingTransport,
@@ -75,6 +76,8 @@ export interface IWSChannel {
 export interface WSChannelOptions {
   transport?: Transport;
   logger?: Logger;
+  /** Redaction strategy for injected-logger debug output. Defaults to "balanced". */
+  redaction?: RedactionMode;
 }
 
 export interface Logger {
@@ -117,6 +120,7 @@ export class WSChannel {
       ? new LoggingTransport(baseTransport, {
           logger: options.logger,
           enabled: () => LOG_LEVEL_PRIORITY[this.props.LogLevel ?? "debug"] >= LOG_LEVEL_PRIORITY.debug,
+          ...(options.redaction ? { redaction: options.redaction } : {}),
         })
       : baseTransport;
   }

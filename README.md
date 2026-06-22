@@ -158,6 +158,8 @@ const client = new WSChannel(
 
 Set `LogLevel: "silent"` (or omit the logger) to disable transport logging. The redaction lives in `LoggingTransport`, which wraps whatever transport you provide, so a custom transport is logged too.
 
+Redaction strips known secrets and PII (tokens, passwords, codes, email, phone, name), masks token-like values regardless of field name, and removes emails from logged URLs. For low-trust log sinks, pass `redaction: "strict"` (via `WSChannelOptions` or `LoggingTransportOptions`) to redact everything except an allowlist of known-safe fields.
+
 ## Errors and Resilience
 
 Logical failures returned by the API as HTTP 200 with `ResponseCode !== "00"` surface through the typed auth/verification states described above. Transport-level failures throw a typed error hierarchy instead of raw `AxiosError`s:
