@@ -17,6 +17,17 @@
 - Added `parseMode` / `parseLogLevel` (and `isMode` / `isLogLevel`) input guards so untrusted values such as environment variables are validated instead of unchecked-cast.
 - Tightened the `classifyErrorReason` "unconfirmed" heuristic to avoid matching unrelated responses that merely contain the word "confirm".
 
+## [1.1.0](https://github.com/dforsber/isecure-ts-client/compare/isecure-ts-client-v1.0.2...isecure-ts-client-v1.1.0) (2026-06-22)
+
+
+### Features
+
+* harden SDK auth/verification surface (1.0.2) ([#5](https://github.com/dforsber/isecure-ts-client/issues/5)) ([2bffed2](https://github.com/dforsber/isecure-ts-client/commit/2bffed2739f0a64ab5b41ab09759ac9ca8eb7a94))
+* redaction hardening + modularity (3/5) ([#9](https://github.com/dforsber/isecure-ts-client/issues/9)) ([5f2540a](https://github.com/dforsber/isecure-ts-client/commit/5f2540ad4a21b44dff99122840f526b971a5762d))
+* resilient transport + typed errors (2/5) ([#8](https://github.com/dforsber/isecure-ts-client/issues/8)) ([352742c](https://github.com/dforsber/isecure-ts-client/commit/352742ce6662b1f66bcedfa6153a8dadb5e94be5))
+* session lifecycle + refresh hook (4/5) ([#10](https://github.com/dforsber/isecure-ts-client/issues/10)) ([6cf5b24](https://github.com/dforsber/isecure-ts-client/commit/6cf5b24eb1c053dac9429a48d87b4e4b2d5963e6))
+* support browser bundlers ([33d3b89](https://github.com/dforsber/isecure-ts-client/commit/33d3b89333e042060f9bc681a8ab5ec938feeb89))
+
 ## 1.0.2
 
 - Fixed `classifyAuthResponse` so explicit `verify phone` / `verify email` prompts are detected before the session/`sms code` MFA heuristic. A verification response that also carries a Cognito session token (or the words "sms code") is no longer misclassified as `needs_mfa`.
