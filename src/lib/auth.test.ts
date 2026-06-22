@@ -142,6 +142,32 @@ describe("auth state classification", () => {
     ).toMatchObject({ status: "needs_mfa", session: "session-token" });
   });
 
+  it("classifies a refresh re-login as needs_mfa, not authenticated, despite stale id/api tokens", () => {
+    // A refresh holds the prior session's id token + API key. The MFA-stage
+    // re-login response carries no new id token, so it must classify as MFA,
+    // not be misread as already authenticated.
+    expect(
+      classifyAuthResponse(
+        "admin",
+        { ResponseCode: "00", ResponseText: "Give SMS code", Session: "sess" },
+        { apiKey: "stale-api-key", idToken: "stale-id-token", session: "sess" },
+      ),
+    ).toMatchObject({ status: "needs_mfa", session: "sess" });
+  });
+
+  it("classifies an MFA-stage re-login as needs_mfa even with a lingering access token", () => {
+    // After email verification the merged session still holds the access token
+    // from the earlier stage. The MFA-stage re-login carries only a session and
+    // "sms code"; it must classify as MFA, not re-trigger email verification.
+    expect(
+      classifyAuthResponse(
+        "admin",
+        { ResponseCode: "00", ResponseText: "Give SMS code", Session: "sess" },
+        { accessToken: "stale-access-token", session: "sess" },
+      ),
+    ).toMatchObject({ status: "needs_mfa", session: "sess" });
+  });
+
   it("classifies phone verification from stable response text fragments", () => {
     expect(
       classifyAuthResponse("data", { ResponseCode: "00", ResponseText: "User must verify phone number by SMS." }, {}),

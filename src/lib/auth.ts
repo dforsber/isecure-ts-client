@@ -45,8 +45,12 @@ type AuthRule = (mode: Mode, response: AuthResponse, tokens: SessionTokens) => A
  * (e.g. "Verify phone number with received SMS code").
  */
 const AUTH_RULES: readonly AuthRule[] = [
+  // Authentication is keyed on the id token from *this* response, not the merged
+  // session. A refresh re-login (e.g. via loginWithPrompt) still holds the prior
+  // session's id token/API key, so keying on the merged tokens would misclassify
+  // an MFA-stage re-login as already authenticated.
   (mode, response, tokens) =>
-    tokens.apiKey && tokens.idToken
+    response.IdToken && tokens.apiKey && tokens.idToken
       ? {
           status: "authenticated",
           mode,
@@ -57,10 +61,13 @@ const AUTH_RULES: readonly AuthRule[] = [
   (mode, response) =>
     responseTextIncludes(response, "verify phone") ? { status: "needs_phone_verification", mode, response } : undefined,
   // Email verification is driven via the access-token attribute path, so the
-  // state only carries a usable token.
-  (mode, response, tokens) =>
-    tokens.accessToken
-      ? { status: "needs_email_verification", mode, accessToken: tokens.accessToken, response }
+  // state only carries a usable token. Key on the access token from *this*
+  // response, not the merged session: a later MFA-stage re-login carries only a
+  // session token, and a lingering access token from the email-verification
+  // stage must not re-trigger email verification.
+  (mode, response) =>
+    response.AccessToken
+      ? { status: "needs_email_verification", mode, accessToken: response.AccessToken, response }
       : undefined,
   // Email verification was requested but no access token was returned: the SDK
   // cannot drive it, so surface a typed failure instead of an unusable state.

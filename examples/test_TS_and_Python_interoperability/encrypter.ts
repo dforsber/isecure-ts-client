@@ -22,7 +22,7 @@ fs.writeFileSync("private_key.pem", privateKey);
 const password = "helloWorld";
 
 function getEncrypted(challenge: string): string {
-  const timestamp = challenge?.split("|")[1];
+  const timestamp = challenge.split("|")[1] ?? "";
   const pw_pair = password + "||" + timestamp;
   const padding = crypto.constants.RSA_PKCS1_OAEP_PADDING;
   const encryptedData = crypto.publicEncrypt({ key: publicKey, padding }, Buffer.from(pw_pair)).toString("base64");

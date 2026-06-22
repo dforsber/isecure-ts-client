@@ -12,7 +12,7 @@ const srcPath = __dirname.includes("/dist/")
   ? path.join(__dirname.replace("/dist/", "/"), "./test.pem") // When running from dist
   : path.join(__dirname, "./test.pem"); // When running from source
 
-const publicKey = fs.readFileSync(srcPath, "utf8").toString();
+const publicKey = fs.readFileSync(srcPath, "utf8");
 const password = "helloWorld";
 const challenge = "ezwXceQ63fV9oWTSJBAE2Zq1Cw5tBIJe+7+Rl8jrgbk=|1475429754114|4017bda8-0a15-4154-a8b7-88069b05cb4e";
 

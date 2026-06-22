@@ -147,10 +147,10 @@ function encodeBase64(binary: string): string {
     const byte3 = index + 2 < binary.length ? binary.charCodeAt(index + 2) : 0;
     const triplet = (byte1 << 16) | (byte2 << 8) | byte3;
 
-    output += alphabet[(triplet >> 18) & 0x3f];
-    output += alphabet[(triplet >> 12) & 0x3f];
-    output += index + 1 < binary.length ? alphabet[(triplet >> 6) & 0x3f] : "=";
-    output += index + 2 < binary.length ? alphabet[triplet & 0x3f] : "=";
+    output += alphabet.charAt((triplet >> 18) & 0x3f);
+    output += alphabet.charAt((triplet >> 12) & 0x3f);
+    output += index + 1 < binary.length ? alphabet.charAt((triplet >> 6) & 0x3f) : "=";
+    output += index + 2 < binary.length ? alphabet.charAt(triplet & 0x3f) : "=";
   }
 
   return output;
