@@ -158,6 +158,40 @@ const client = new WSChannel(
 
 Set `LogLevel: "silent"` (or omit the logger) to disable transport logging. The redaction lives in `LoggingTransport`, which wraps whatever transport you provide, so a custom transport is logged too.
 
+## Errors and Resilience
+
+Logical failures returned by the API as HTTP 200 with `ResponseCode !== "00"` surface through the typed auth/verification states described above. Transport-level failures throw a typed error hierarchy instead of raw `AxiosError`s:
+
+- `ISecureHttpError` — a non-2xx response, exposing `status`, `responseCode`, `responseText`, `requestId` (quote this in support tickets), and the raw `body`.
+- `ISecureNetworkError` — a network failure or timeout (`timedOut`, `code`, `cause`).
+- `ISecureAbortError` — a request cancelled via `AbortSignal`.
+
+All extend `ISecureError`; use `isISecureError(err)` to narrow.
+
+```ts
+import { isISecureError, ISecureHttpError } from "isecure-ts-client";
+
+try {
+  await client.listFiles({ Status: "ALL" });
+} catch (err) {
+  if (err instanceof ISecureHttpError) {
+    console.error(`HTTP ${err.status} (RequestId ${err.requestId}): ${err.responseText}`);
+  } else if (isISecureError(err)) {
+    console.error(err.message);
+  }
+}
+```
+
+The default `AxiosTransport` applies production defaults — a 30s timeout and bounded exponential-backoff retries (with jitter and `Retry-After` support) for transient failures (network errors, 408/425/429/5xx). Tune them via `AxiosTransportOptions`:
+
+```ts
+const client = new WSChannel(props, {
+  transport: new AxiosTransport({ timeoutMs: 10_000, retries: 3 }),
+});
+```
+
+The transport also honors an `AbortSignal` on each `TransportRequest` (cancelling an in-flight request or a pending retry backoff), which custom transports and integrations can use directly.
+
 ## Runtime Support
 
 The SDK supports Node.js and modern browser bundlers. Password challenge encryption uses WebCrypto-compatible RSA-OAEP with SHA-1, so browser runtimes must provide `globalThis.crypto.subtle`.

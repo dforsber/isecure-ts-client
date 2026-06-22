@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added a typed error hierarchy (`ISecureError`, `ISecureHttpError`, `ISecureNetworkError`, `ISecureAbortError`, plus `isISecureError`). Non-2xx HTTP responses now throw `ISecureHttpError` carrying the HTTP status, backend `ResponseCode`/`ResponseText`, and the `RequestId` needed for support — instead of leaking raw `AxiosError`s. The `ResponseCode !== "00"` logical-failure path is unchanged (it stays on 2xx and is handled by the auth-state classifier).
+- Hardened `AxiosTransport` for production: a default 30s request timeout, bounded exponential-backoff retries with full jitter and `Retry-After` support for transient failures, and `AbortSignal` propagation (including aborting a pending retry backoff). Retries are **idempotency-aware** — non-idempotent methods (anything but `GET`) are only retried on a `429` (rate-limited, not processed), so a file upload or one-time code is never silently replayed; opt in with `retryNonIdempotent`. The constructor still accepts a bare axios instance for backwards compatibility in addition to the new `AxiosTransportOptions`.
 - Refactored `classifyAuthResponse` into an explicit, ordered rule table so the precedence between overlapping login signals (verification prompt vs. session/`sms code` MFA heuristic) lives in one reviewable place — the root cause of the original misclassification was an ordering bug in a hand-written if-ladder.
 - Collapsed the per-operation request boilerplate into a single private `call()` funnel that centralizes JSON-vs-authenticated header selection and response unwrapping.
 - Added a `User-Agent: isecure-ts-client/<version>` header on Node runtimes (skipped in browsers, where it is a forbidden header), plus exported `SDK_VERSION` / `USER_AGENT`.

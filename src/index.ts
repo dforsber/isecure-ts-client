@@ -1,5 +1,12 @@
 export { WSChannel, type IWSChannel, type Logger, type WSChannelOptions } from "./lib/isecure.class.js";
 export { isLogLevel, isMode, parseLogLevel, parseMode } from "./lib/guards.js";
+export {
+  ISecureAbortError,
+  ISecureError,
+  ISecureHttpError,
+  ISecureNetworkError,
+  isISecureError,
+} from "./lib/errors.js";
 export { SDK_VERSION, USER_AGENT } from "./lib/version.js";
 export {
   classifyErrorReason,
@@ -15,6 +22,7 @@ export {
   AxiosTransport,
   FakeTransport,
   LoggingTransport,
+  type AxiosTransportOptions,
   type HttpHeaders,
   type HttpMethod,
   type LoggingTransportOptions,
