@@ -3,8 +3,8 @@ import crypto from "crypto";
 import fs from "fs";
 
 // Read the private key and encrypted data
-const privateKey = fs.readFileSync("py_private_key.pem", "utf8").toString();
-const encryptedData = fs.readFileSync("py_encrypted.txt", "utf8").toString();
+const privateKey = fs.readFileSync("py_private_key.pem", "utf8");
+const encryptedData = fs.readFileSync("py_encrypted.txt", "utf8");
 
 function decryptData(encryptedBase64: string): string {
   // Decode from base64 and decrypt

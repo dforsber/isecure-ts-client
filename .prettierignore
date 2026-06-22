@@ -8,3 +8,4 @@ node_modules/
 src/generated/
 wsapi_v2.json
 yarn.lock
+docs-api/
