@@ -1,4 +1,5 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from "axios";
+import { ISecureAbortError, ISecureHttpError, ISecureNetworkError } from "./errors.js";
 import { USER_AGENT } from "./version.js";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
@@ -11,6 +12,8 @@ export interface TransportRequest<Body = unknown> {
   headers?: HttpHeaders;
   query?: QueryParams;
   body?: Body;
+  /** Aborts the request (and any pending retry backoff) when signalled. */
+  signal?: AbortSignal;
 }
 
 export interface TransportResponse<Body> {
@@ -33,16 +36,96 @@ function isNodeRuntime(): boolean {
   return typeof process !== "undefined" && process.versions?.node != null && typeof window === "undefined";
 }
 
+export interface AxiosTransportOptions {
+  /** Custom axios instance. Defaults to a fresh `axios.create()`. */
+  client?: AxiosInstance;
+  /** Per-request timeout in milliseconds. Defaults to 30000. Use 0 to disable. */
+  timeoutMs?: number;
+  /** Max retry attempts for transient failures (network/429/5xx). Defaults to 2. */
+  retries?: number;
+  /** Base backoff delay in milliseconds (exponential with full jitter). Defaults to 300. */
+  retryBaseDelayMs?: number;
+  /** Upper bound for a single backoff delay. Defaults to 5000. */
+  maxRetryDelayMs?: number;
+  /** Random source for jitter; injectable for deterministic tests. Defaults to Math.random. */
+  random?: () => number;
+}
+
+const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_RETRIES = 2;
+const DEFAULT_RETRY_BASE_MS = 300;
+const DEFAULT_MAX_RETRY_MS = 5_000;
+const RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+
+/**
+ * Axios-backed transport with production defaults: a request timeout, bounded
+ * exponential-backoff retries (with full jitter and `Retry-After` support) for
+ * transient network/5xx/429 failures, `AbortSignal` propagation, and
+ * normalization of failures into the typed {@link ISecureError} hierarchy.
+ * Non-2xx responses throw {@link ISecureHttpError} (the `ResponseCode !== "00"`
+ * logical-failure path stays on 2xx and is handled above the transport).
+ */
 export class AxiosTransport implements Transport {
-  constructor(private readonly client: AxiosInstance = axios.create()) {}
+  private readonly client: AxiosInstance;
+  private readonly timeoutMs: number;
+  private readonly retries: number;
+  private readonly retryBaseDelayMs: number;
+  private readonly maxRetryDelayMs: number;
+  private readonly random: () => number;
+
+  constructor(options: AxiosTransportOptions = {}) {
+    this.client = options.client ?? axios.create();
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.retries = Math.max(0, options.retries ?? DEFAULT_RETRIES);
+    this.retryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_MS;
+    this.maxRetryDelayMs = options.maxRetryDelayMs ?? DEFAULT_MAX_RETRY_MS;
+    this.random = options.random ?? Math.random;
+  }
 
   async request<ResponseBody, RequestBody = unknown>(
     request: TransportRequest<RequestBody>,
   ): Promise<TransportResponse<ResponseBody>> {
+    const config = this.buildConfig(request);
+
+    for (let attempt = 0; ; attempt += 1) {
+      this.throwIfAborted(request.signal);
+
+      let response: AxiosResponse<ResponseBody>;
+      try {
+        response = await this.client.request<ResponseBody, AxiosResponse<ResponseBody>, RequestBody>(config);
+      } catch (error) {
+        if (isAbortError(error, request.signal)) {
+          throw new ISecureAbortError(undefined, { cause: error });
+        }
+        if (attempt < this.retries) {
+          await this.backoff(attempt, undefined, request.signal);
+          continue;
+        }
+        throw toNetworkError(error);
+      }
+
+      if (response.status >= 200 && response.status < 300) {
+        return { status: response.status, statusText: response.statusText, data: response.data };
+      }
+
+      if (RETRYABLE_STATUSES.has(response.status) && attempt < this.retries) {
+        await this.backoff(attempt, retryAfterMs(response.headers), request.signal);
+        continue;
+      }
+
+      throw ISecureHttpError.fromResponse(response.status, response.statusText, response.data);
+    }
+  }
+
+  private buildConfig<RequestBody>(request: TransportRequest<RequestBody>): AxiosRequestConfig<RequestBody> {
     const config: AxiosRequestConfig<RequestBody> = {
       method: request.method,
       url: request.url,
+      // Inspect every status ourselves so retry/typed-error logic owns failures.
+      validateStatus: () => true,
     };
+    if (this.timeoutMs > 0) config.timeout = this.timeoutMs;
+    if (request.signal) config.signal = request.signal;
     if (request.query) config.params = request.query;
     if (request.body !== undefined) config.data = request.body;
 
@@ -52,14 +135,70 @@ export class AxiosTransport implements Transport {
     }
     if (Object.keys(headers).length > 0) config.headers = headers;
 
-    const response = await this.client.request<ResponseBody, AxiosResponse<ResponseBody>, RequestBody>(config);
-
-    return {
-      status: response.status,
-      statusText: response.statusText,
-      data: response.data,
-    };
+    return config;
   }
+
+  private async backoff(attempt: number, retryAfter: number | undefined, signal?: AbortSignal): Promise<void> {
+    const exponential = this.retryBaseDelayMs * 2 ** attempt;
+    const jittered = this.random() * Math.min(this.maxRetryDelayMs, exponential);
+    const delay = Math.min(this.maxRetryDelayMs, Math.max(retryAfter ?? 0, jittered));
+    await sleep(delay, signal);
+  }
+
+  private throwIfAborted(signal?: AbortSignal): void {
+    if (signal?.aborted) {
+      throw new ISecureAbortError();
+    }
+  }
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new ISecureAbortError());
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function isAbortError(error: unknown, signal?: AbortSignal): boolean {
+  if (signal?.aborted) return true;
+  if (axios.isCancel(error)) return true;
+  const code = (error as { code?: string } | null)?.code;
+  return code === "ERR_CANCELED";
+}
+
+function toNetworkError(error: unknown): ISecureNetworkError {
+  const code = (error as { code?: string } | null)?.code;
+  const timedOut = code === "ECONNABORTED" || code === "ETIMEDOUT";
+  const reason = timedOut ? "request timed out" : "network error";
+  return new ISecureNetworkError(`ISECure request failed: ${reason}`, {
+    cause: error,
+    ...(code !== undefined ? { code } : {}),
+    timedOut,
+  });
+}
+
+function retryAfterMs(headers: unknown): number | undefined {
+  const value = headerValue(headers, "retry-after");
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return seconds * 1000;
+  const date = Date.parse(value);
+  return Number.isNaN(date) ? undefined : Math.max(0, date - Date.now());
+}
+
+function headerValue(headers: unknown, name: string): string | undefined {
+  if (!headers || typeof headers !== "object") return undefined;
+  const record = headers as Record<string, unknown>;
+  const direct = record[name] ?? record[name.toLowerCase()];
+  return typeof direct === "string" ? direct : undefined;
 }
 
 /** Minimal logging sink used by {@link LoggingTransport}. */
