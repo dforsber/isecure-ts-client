@@ -119,7 +119,7 @@ export class LoggingTransport implements Transport {
     const enabled = this.options.enabled?.() ?? true;
     if (enabled) {
       this.options.logger.debug(`request ${request.method} ${request.url}`, {
-        query: request.query,
+        query: redact(request.query),
         headers: redact(request.headers),
         body: redact(request.body),
       });

@@ -102,10 +102,16 @@ export class WSChannel {
     options: WSChannelOptions = {},
   ) {
     this.logger = options.logger ?? new NoopLogger();
-    this.transport = new LoggingTransport(options.transport ?? new AxiosTransport(), {
-      logger: this.logger,
-      enabled: () => LOG_LEVEL_PRIORITY[this.props.LogLevel ?? "debug"] >= LOG_LEVEL_PRIORITY.debug,
-    });
+    const baseTransport = options.transport ?? new AxiosTransport();
+    // Only pay the redaction/clone cost when a logger is actually injected;
+    // the default NoopLogger path uses the bare transport. Logging stays gated
+    // by LogLevel so an injected logger can still be silenced.
+    this.transport = options.logger
+      ? new LoggingTransport(baseTransport, {
+          logger: options.logger,
+          enabled: () => LOG_LEVEL_PRIORITY[this.props.LogLevel ?? "debug"] >= LOG_LEVEL_PRIORITY.debug,
+        })
+      : baseTransport;
   }
 
   get session(): Readonly<SessionTokens> {

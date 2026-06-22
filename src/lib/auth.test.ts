@@ -94,10 +94,30 @@ describe("auth state classification", () => {
     ).toMatchObject({ status: "needs_phone_verification" });
   });
 
-  it("prefers explicit email verification over the session/sms-code MFA heuristic", () => {
-    // Regression: the iSecure server returns "Login OK. Verify email address."
-    // together with a session token and an access token; this must classify as
-    // email verification, not MFA, and carry the access token needed to drive it.
+  it("classifies the real token-less email-verification prompt as a typed failure, not MFA", () => {
+    // Regression for the observed iSecure response: "Login OK. Verify email
+    // address." arrives with a Cognito *session* token and NO access token. The
+    // §1 bug misread it as needs_mfa (driving /mfacode in a loop). It must not
+    // be MFA; and since email verification needs an access token the SDK does
+    // not have, it resolves to a self-consistent typed failure rather than a
+    // needs_email_verification state that verifyEmail() would reject.
+    const state = classifyAuthResponse(
+      "admin",
+      {
+        ResponseCode: "00",
+        ResponseText: "Login OK. Verify email address.",
+        Session: "session-token",
+      },
+      { session: "session-token" },
+    );
+
+    expect(state.status).not.toBe("needs_mfa");
+    expect(state).toMatchObject({ status: "failed", reason: "missing_access_token" });
+  });
+
+  it("classifies the email-verification prompt as needs_email_verification when an access token is present", () => {
+    // The documented contract path: an email-not-verified login returns an
+    // access token, which the state carries so verifyEmail() can drive it.
     expect(
       classifyAuthResponse(
         "admin",

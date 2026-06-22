@@ -53,6 +53,16 @@ async function main(): Promise<void> {
   const client = new WSChannel(configFromEnv());
   const state: AuthState = await client.loginWithPrompt(new TerminalPromptAdapter());
 
+  if (state.status === "stalled") {
+    throw new Error(
+      `Login stalled on ${state.step} after ${state.transitions} transitions; an accepted verification did not advance login.`,
+    );
+  }
+
+  if (state.status === "failed") {
+    throw new Error(`Login failed (${state.reason}): ${state.responseText}`);
+  }
+
   if (state.status !== "authenticated") {
     throw new Error(`Login did not authenticate: ${state.status}`);
   }
