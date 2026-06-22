@@ -114,15 +114,49 @@ if (state.status === "needs_phone_verification") {
 }
 ```
 
-For CLI scripts, pass a prompt adapter:
+For CLI scripts, pass a prompt adapter. `loginWithPrompt` drives the whole MFA → email → phone verification machine to completion and is bounded, so you never re-implement the verify/re-login loop yourself:
 
 ```ts
-await client.loginWithPrompt({
+const state = await client.loginWithPrompt({
   requestMfaCode: async () => "...",
   requestEmailCode: async () => "...",
   requestPhoneCode: async () => "...",
 });
+
+if (state.status === "authenticated") {
+  // ready to call authenticated operations
+} else if (state.status === "stalled") {
+  // an accepted verification did not advance login (e.g. backend did not flip
+  // confirmation). `state.step` names the stuck step instead of looping.
+  console.error(`Login stalled on ${state.step} after ${state.transitions} steps`);
+} else if (state.status === "failed") {
+  // `state.reason` is a discriminable AuthErrorReason such as "invalid_code",
+  // "expired_code", "too_many_attempts", or "missing_access_token".
+  console.error(`Login failed (${state.reason}): ${state.responseText}`);
+}
 ```
+
+Verification helpers (`verifyEmail`, `verifyPhone`) and `classifyVerificationResponse` return the same typed `failed` state with an `AuthErrorReason`, so invalid/expired codes, rate limiting, and already-verified cases are discriminable rather than collapsed into a single error string.
+
+## Debug Logging
+
+Logging is opt-in. By default the SDK uses a no-op logger and emits nothing. Inject a `logger` and keep `LogLevel` at `debug` (the default) to get redacted request/response debug lines for every call — secrets, tokens, and one-time codes are stripped before logging:
+
+```ts
+const client = new WSChannel(
+  { ...props, LogLevel: "debug" },
+  {
+    logger: {
+      debug: (message, meta) => console.debug(message, meta),
+      info: () => {},
+      warn: () => {},
+      error: () => {},
+    },
+  },
+);
+```
+
+Set `LogLevel: "silent"` (or omit the logger) to disable transport logging. The redaction lives in `LoggingTransport`, which wraps whatever transport you provide, so a custom transport is logged too.
 
 ## Runtime Support
 

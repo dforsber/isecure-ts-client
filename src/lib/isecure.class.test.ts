@@ -71,7 +71,39 @@ describe("WSChannel", () => {
     expect(messages).toEqual([]);
 
     await new WSChannel(props({ LogLevel: "debug" }), { transport, logger }).register();
-    expect(messages).toEqual(["registered account"]);
+    expect(messages).toContain("registered account");
+    // The transport also emits redacted request/response debug lines at this level.
+    expect(messages.some((message) => message.startsWith("request "))).toBe(true);
+    expect(messages.some((message) => message.startsWith("response "))).toBe(true);
+  });
+
+  it("redacts secrets and codes in transport debug logs", async () => {
+    const meta: unknown[] = [];
+    const logger: Logger = {
+      debug(_message, entry) {
+        meta.push(entry);
+      },
+      info() {},
+      warn() {},
+      error() {},
+    };
+    const transport = new FakeTransport();
+    transport.respond((request) => {
+      if (match("GET", "/account/user%40example.test/admin")(request)) {
+        return response({ Challenge: challenge, ResponseCode: "00", ResponseText: "OK" });
+      }
+      if (match("PUT", "/account/user%40example.test/admin")(request)) {
+        return response({ ApiKey: "super-secret-key", ResponseCode: "00", ResponseText: "Created" }, 201);
+      }
+      return undefined;
+    });
+
+    await new WSChannel(props(), { transport, logger }).register();
+
+    const serialized = JSON.stringify(meta);
+    expect(serialized).not.toContain("super-secret-key");
+    expect(serialized).not.toContain(challenge);
+    expect(serialized).toContain("[redacted]");
   });
 
   it("registers with a challenge response body generated from the OpenAPI Register request shape", async () => {
@@ -337,7 +369,38 @@ describe("WSChannel", () => {
         },
         1,
       ),
-    ).rejects.toThrow("Authentication did not settle");
+    ).resolves.toMatchObject({ status: "stalled", step: "phone_verification" });
+  });
+
+  it("reports a typed stalled state when an accepted verification does not advance login", async () => {
+    // The backend keeps re-requesting phone verification even after it accepts
+    // the code: loginWithPrompt must stop and name the stuck step, not loop.
+    const transport = new FakeTransport();
+    transport.respond((request) => {
+      if (request.method === "GET") return response({ Challenge: challenge, ResponseCode: "00", ResponseText: "OK" });
+      if (request.method === "POST" && request.url.includes("/account/")) {
+        return response({ ResponseCode: "00", ResponseText: "Phone confirmation successful." });
+      }
+      return response({
+        ResponseCode: "00",
+        ResponseText: "User authentication failed. Verify phone number with received SMS.",
+      });
+    });
+
+    const client = new WSChannel(props(), { transport });
+    const state = await client.loginWithPrompt({
+      async requestMfaCode() {
+        throw new Error("MFA should not be requested");
+      },
+      async requestEmailCode() {
+        throw new Error("email should not be requested");
+      },
+      async requestPhoneCode() {
+        return "phone";
+      },
+    });
+
+    expect(state).toMatchObject({ status: "stalled", step: "phone_verification" });
   });
 
   it("sends authenticated PGP, upload, and list requests through the public SDK interface", async () => {

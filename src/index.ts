@@ -1,12 +1,24 @@
 export { WSChannel, type IWSChannel, type Logger, type WSChannelOptions } from "./lib/isecure.class.js";
-export { type AuthPromptAdapter, type AuthState, type SessionTokens } from "./lib/auth.js";
+export {
+  classifyErrorReason,
+  type AuthErrorReason,
+  type AuthPromptAdapter,
+  type AuthResponse,
+  type AuthState,
+  type AuthStep,
+  type ResponseEnvelope,
+  type SessionTokens,
+} from "./lib/auth.js";
 export {
   AxiosTransport,
   FakeTransport,
+  LoggingTransport,
   type HttpHeaders,
   type HttpMethod,
+  type LoggingTransportOptions,
   type QueryParams,
   type Transport,
+  type TransportLogger,
   type TransportRequest,
   type TransportResponse,
 } from "./lib/transport.js";
