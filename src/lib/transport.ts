@@ -1,5 +1,6 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from "axios";
 import { ISecureAbortError, ISecureHttpError, ISecureNetworkError } from "./errors.js";
+import { redactUrl, redactValue, type RedactionMode } from "./redact.js";
 import { USER_AGENT } from "./version.js";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
@@ -241,85 +242,56 @@ export interface LoggingTransportOptions {
   logger: TransportLogger;
   /** Gate evaluated per request; when it returns false nothing is logged. */
   enabled?: () => boolean;
-}
-
-/**
- * Field names whose values are secrets, credentials, or one-time codes. Their
- * values are replaced with `[redacted]` before anything is logged. Matching is
- * case-insensitive.
- */
-const SENSITIVE_FIELDS = new Set(
-  [
-    "password",
-    "encrypted",
-    "accesstoken",
-    "idtoken",
-    "apikey",
-    "x-api-key",
-    "authorization",
-    "session",
-    "code",
-    "chresp",
-    "challenge",
-    "privatekey",
-    "encprivatekey",
-    "encryptedprivatekey",
-    "pgpkey",
-  ].map((field) => field.toLowerCase()),
-);
-
-const REDACTED = "[redacted]";
-
-function redact(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(redact);
-  }
-  if (value && typeof value === "object") {
-    const result: Record<string, unknown> = {};
-    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-      result[key] = SENSITIVE_FIELDS.has(key.toLowerCase()) ? REDACTED : redact(entry);
-    }
-    return result;
-  }
-  return value;
+  /**
+   * Redaction strategy. `"balanced"` (default) strips known-sensitive fields
+   * plus token-like values; `"strict"` redacts everything except an allowlist
+   * of known-safe fields. See {@link RedactionMode}.
+   */
+  redaction?: RedactionMode;
 }
 
 /**
  * Transport decorator that emits redacted debug logs for every request and
- * response (and request failures) around an inner transport. Secrets and
- * one-time codes are stripped before logging. Logging is opt-in: by default the
- * SDK wraps a {@link NoopLogger}, so nothing is emitted until a logger is
- * injected and the configured log level enables it.
+ * response (and request failures) around an inner transport. Secrets, one-time
+ * codes, and PII are stripped before logging (see {@link redactValue} /
+ * {@link redactUrl}). Logging is opt-in: by default the SDK wraps a
+ * {@link NoopLogger}, so nothing is emitted until a logger is injected and the
+ * configured log level enables it.
  */
 export class LoggingTransport implements Transport {
+  private readonly mode: RedactionMode;
+
   constructor(
     private readonly inner: Transport,
     private readonly options: LoggingTransportOptions,
-  ) {}
+  ) {
+    this.mode = options.redaction ?? "balanced";
+  }
 
   async request<ResponseBody, RequestBody = unknown>(
     request: TransportRequest<RequestBody>,
   ): Promise<TransportResponse<ResponseBody>> {
     const enabled = this.options.enabled?.() ?? true;
+    const url = redactUrl(request.url);
     if (enabled) {
-      this.options.logger.debug(`request ${request.method} ${request.url}`, {
-        query: redact(request.query),
-        headers: redact(request.headers),
-        body: redact(request.body),
+      this.options.logger.debug(`request ${request.method} ${url}`, {
+        query: redactValue(request.query, this.mode),
+        headers: redactValue(request.headers, this.mode),
+        body: redactValue(request.body, this.mode),
       });
     }
 
     try {
       const response = await this.inner.request<ResponseBody, RequestBody>(request);
       if (enabled) {
-        this.options.logger.debug(`response ${response.status} ${request.method} ${request.url}`, {
-          body: redact(response.data),
+        this.options.logger.debug(`response ${response.status} ${request.method} ${url}`, {
+          body: redactValue(response.data, this.mode),
         });
       }
       return response;
     } catch (error) {
       if (enabled) {
-        this.options.logger.debug(`error ${request.method} ${request.url}`, {
+        this.options.logger.debug(`error ${request.method} ${url}`, {
           message: error instanceof Error ? error.message : String(error),
         });
       }

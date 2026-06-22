@@ -7,6 +7,7 @@ export {
   ISecureNetworkError,
   isISecureError,
 } from "./lib/errors.js";
+export { redactUrl, redactValue, type RedactionMode } from "./lib/redact.js";
 export { SDK_VERSION, USER_AGENT } from "./lib/version.js";
 export {
   classifyErrorReason,
