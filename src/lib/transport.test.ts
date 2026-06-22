@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AxiosTransport, FakeTransport, type TransportRequest } from "./transport.js";
+import { USER_AGENT } from "./version.js";
 
 describe("transport adapters", () => {
   it("maps SDK transport requests to axios config", async () => {
@@ -21,18 +22,19 @@ describe("transport adapters", () => {
     });
 
     expect(response).toEqual({ status: 202, statusText: "Accepted", data: { ok: true } });
+    // On Node runtimes the transport adds a User-Agent for server-side diagnostics.
     expect(calls).toEqual([
       {
         method: "POST",
         url: "https://example.test/resource",
         params: { Status: "ALL" },
-        headers: { Authorization: "token" },
+        headers: { Authorization: "token", "User-Agent": USER_AGENT },
         data: { value: "body" },
       },
     ]);
   });
 
-  it("keeps axios config minimal when optional fields are absent", async () => {
+  it("attaches only the User-Agent header when no headers are supplied (Node)", async () => {
     const calls: unknown[] = [];
     const transport = new AxiosTransport({
       async request(config: unknown) {
@@ -43,7 +45,9 @@ describe("transport adapters", () => {
 
     await transport.request<string>({ method: "GET", url: "https://example.test/resource" });
 
-    expect(calls).toEqual([{ method: "GET", url: "https://example.test/resource" }]);
+    expect(calls).toEqual([
+      { method: "GET", url: "https://example.test/resource", headers: { "User-Agent": USER_AGENT } },
+    ]);
   });
 
   it("throws useful fake transport errors for missing handlers", async () => {

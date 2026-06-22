@@ -49,7 +49,14 @@ import {
   type VerifyPhoneRequest,
 } from "./api-types.js";
 import { encryptPasswordChallenge } from "./challenge-crypto.js";
-import { AxiosTransport, LoggingTransport, type HttpHeaders, type Transport } from "./transport.js";
+import {
+  AxiosTransport,
+  LoggingTransport,
+  type HttpHeaders,
+  type HttpMethod,
+  type QueryParams,
+  type Transport,
+} from "./transport.js";
 
 export interface IWSChannel {
   Company: string;
@@ -133,26 +140,15 @@ export class WSChannel {
       Phone: this.props.Phone,
     };
 
-    const response = await this.transport.request<RegisterResponse, RegisterRequest>({
-      method: "PUT",
-      url: this.accountUrl(),
-      body: request,
-      headers: this.jsonHeaders(),
-    });
+    const data = await this.call<RegisterResponse, RegisterRequest>("PUT", this.accountUrl(), { body: request });
 
-    this.tokens = { ...this.tokens, apiKey: response.data.ApiKey };
+    this.tokens = { ...this.tokens, apiKey: data.ApiKey };
     this.log("debug", "registered account", { mode: this.props.Mode, email: this.props.Email });
-    return response.data;
+    return data;
   }
 
   async initPasswordReset(): Promise<InitPasswordResetResponse> {
-    const response = await this.transport.request<InitPasswordResetResponse>({
-      method: "GET",
-      url: this.passwordUrl(),
-      headers: this.jsonHeaders(),
-    });
-
-    return response.data;
+    return this.call<InitPasswordResetResponse>("GET", this.passwordUrl());
   }
 
   async passwordReset(request: PasswordResetRequest): Promise<PasswordResetResponse>;
@@ -174,14 +170,7 @@ export class WSChannel {
           }
         : requestOrCode;
 
-    const response = await this.transport.request<PasswordResetResponse, PasswordResetRequest>({
-      method: "POST",
-      url: this.passwordUrl(),
-      body: request,
-      headers: this.jsonHeaders(),
-    });
-
-    return response.data;
+    return this.call<PasswordResetResponse, PasswordResetRequest>("POST", this.passwordUrl(), { body: request });
   }
 
   async login(): Promise<AuthState> {
@@ -191,14 +180,8 @@ export class WSChannel {
       Encrypted: await this.encryptPasswordChallenge(ChResp),
     };
 
-    const response = await this.transport.request<LoginResponse, LoginRequest>({
-      method: "POST",
-      url: this.sessionUrl(),
-      body: request,
-      headers: this.jsonHeaders(),
-    });
-
-    return this.applyAuthResponse(response.data);
+    const data = await this.call<LoginResponse, LoginRequest>("POST", this.sessionUrl(), { body: request });
+    return this.applyAuthResponse(data);
   }
 
   async submitMfaCode(code: string): Promise<AuthState> {
@@ -207,14 +190,11 @@ export class WSChannel {
     }
 
     const request: LoginMfaRequest = { Code: code, Session: this.tokens.session };
-    const response = await this.transport.request<LoginMfaResponse, LoginMfaRequest>({
-      method: "PUT",
-      url: `${this.sessionUrl()}/mfacode`,
+    const data = await this.call<LoginMfaResponse, LoginMfaRequest>("PUT", `${this.sessionUrl()}/mfacode`, {
       body: request,
-      headers: this.jsonHeaders(),
     });
 
-    return this.applyAuthResponse(response.data);
+    return this.applyAuthResponse(data);
   }
 
   async loginMFA(code: string): Promise<AuthState> {
@@ -223,14 +203,13 @@ export class WSChannel {
 
   async verifyPhone(code: string): Promise<AuthState> {
     const request: VerifyPhoneRequest = { Code: code };
-    const response = await this.transport.request<ApiResponse, VerifyPhoneRequest>({
-      method: "POST",
-      url: `${this.accountUrl()}/${encodeURIComponent(this.props.Phone)}`,
-      body: request,
-      headers: this.jsonHeaders(),
-    });
+    const data = await this.call<ApiResponse, VerifyPhoneRequest>(
+      "POST",
+      `${this.accountUrl()}/${encodeURIComponent(this.props.Phone)}`,
+      { body: request },
+    );
 
-    return classifyVerificationResponse(this.props.Mode, "phone", response.data);
+    return classifyVerificationResponse(this.props.Mode, "phone", data);
   }
 
   async verifyEmail(code: string): Promise<AuthState> {
@@ -239,14 +218,9 @@ export class WSChannel {
     }
 
     const request: VerifyEmailRequest = { AccessToken: this.tokens.accessToken, Code: code };
-    const response = await this.transport.request<ApiResponse, VerifyEmailRequest>({
-      method: "POST",
-      url: this.accountUrl(),
-      body: request,
-      headers: this.jsonHeaders(),
-    });
+    const data = await this.call<ApiResponse, VerifyEmailRequest>("POST", this.accountUrl(), { body: request });
 
-    return classifyVerificationResponse(this.props.Mode, "email", response.data);
+    return classifyVerificationResponse(this.props.Mode, "email", data);
   }
 
   /**
@@ -301,36 +275,16 @@ export class WSChannel {
 
   async uploadPgpKey(armoredKey: string, purpose: PgpKeyPurpose): Promise<ApiResponse> {
     const request: UploadKeyRequest = { PgpKey: armoredKey, PgpKeyPurpose: purpose };
-    const response = await this.transport.request<ApiResponse, UploadKeyRequest>({
-      method: "PUT",
-      url: this.pgpUrl(),
-      body: request,
-      headers: this.authHeaders(),
-    });
-
-    return response.data;
+    return this.call<ApiResponse, UploadKeyRequest>("PUT", this.pgpUrl(), { body: request, auth: true });
   }
 
   async listKeys(): Promise<ListKeysResponse> {
-    const response = await this.transport.request<ListKeysResponse>({
-      method: "GET",
-      url: this.pgpUrl(),
-      headers: this.authHeaders(),
-    });
-
-    return response.data;
+    return this.call<ListKeysResponse>("GET", this.pgpUrl(), { auth: true });
   }
 
   async deleteKey(PgpKeyId: string): Promise<DeleteKeyResponse> {
     const request: DeleteKeyRequest = { PgpKeyId };
-    const response = await this.transport.request<DeleteKeyResponse, DeleteKeyRequest>({
-      method: "DELETE",
-      url: this.pgpUrl(),
-      body: request,
-      headers: this.authHeaders(),
-    });
-
-    return response.data;
+    return this.call<DeleteKeyResponse, DeleteKeyRequest>("DELETE", this.pgpUrl(), { body: request, auth: true });
   }
 
   async uploadFile(request: UploadFileRequest): Promise<ApiResponse>;
@@ -351,14 +305,7 @@ export class WSChannel {
           }
         : requestOrContents;
 
-    const response = await this.transport.request<ApiResponse, UploadFileRequest>({
-      method: "PUT",
-      url: this.filesUrl(),
-      body: request,
-      headers: this.authHeaders(),
-    });
-
-    return response.data;
+    return this.call<ApiResponse, UploadFileRequest>("PUT", this.filesUrl(), { body: request, auth: true });
   }
 
   async listFiles(query?: ListFilesQuery): Promise<ListFilesResponse>;
@@ -373,152 +320,89 @@ export class WSChannel {
       if (queryOrFileType.Status) query.Status = queryOrFileType.Status;
     }
 
-    const response = await this.transport.request<ListFilesResponse>({
-      method: "GET",
-      url: this.filesUrl(),
-      query,
-      headers: this.authHeaders(),
-    });
-
-    return response.data;
+    return this.call<ListFilesResponse>("GET", this.filesUrl(), { query, auth: true });
   }
 
   async downloadFile(FileType: string, FileReference: string): Promise<DownloadFileResponse> {
-    const response = await this.transport.request<DownloadFileResponse>({
-      method: "GET",
-      url: this.fileUrl(FileType, FileReference),
-      headers: this.authHeaders(),
-    });
-
-    return response.data;
+    return this.call<DownloadFileResponse>("GET", this.fileUrl(FileType, FileReference), { auth: true });
   }
 
   async deleteFile(FileType: string, FileReference: string): Promise<DeleteFileResponse> {
-    const response = await this.transport.request<DeleteFileResponse>({
-      method: "DELETE",
-      url: this.fileUrl(FileType, FileReference),
-      headers: this.authHeaders(),
-    });
-
-    return response.data;
+    return this.call<DeleteFileResponse>("DELETE", this.fileUrl(FileType, FileReference), { auth: true });
   }
 
   async listCerts(): Promise<ListCertsResponse> {
-    const response = await this.transport.request<ListCertsResponse>({
-      method: "GET",
-      url: this.certsUrl(),
-      headers: this.authHeaders(),
-    });
-
-    return response.data;
+    return this.call<ListCertsResponse>("GET", this.certsUrl(), { auth: true });
   }
 
   async configCerts(requestOrExport: ConfigCertsRequest | string): Promise<ConfigCertsResponse> {
     const request: ConfigCertsRequest =
       typeof requestOrExport === "string" ? { Export: requestOrExport } : requestOrExport;
-    const response = await this.transport.request<ConfigCertsResponse, ConfigCertsRequest>({
-      method: "POST",
-      url: this.certsUrl(),
-      body: request,
-      headers: this.authHeaders(),
-    });
-
-    return response.data;
+    return this.call<ConfigCertsResponse, ConfigCertsRequest>("POST", this.certsUrl(), { body: request, auth: true });
   }
 
   async shareCerts(ExtEmail: string): Promise<ShareCertsResponse> {
-    const response = await this.transport.request<ShareCertsResponse>({
-      method: "PUT",
-      url: this.sharedCertsUrl(ExtEmail),
-      headers: this.authHeaders(),
-    });
-
-    return response.data;
+    return this.call<ShareCertsResponse>("PUT", this.sharedCertsUrl(ExtEmail), { auth: true });
   }
 
   async unshareCerts(ExtEmail: string): Promise<UnshareCertsResponse> {
-    const response = await this.transport.request<UnshareCertsResponse>({
-      method: "DELETE",
-      url: this.sharedCertsUrl(ExtEmail),
-      headers: this.authHeaders(),
-    });
-
-    return response.data;
+    return this.call<UnshareCertsResponse>("DELETE", this.sharedCertsUrl(ExtEmail), { auth: true });
   }
 
   async exportCert(PgpKeyId: string): Promise<ExportCertResponse> {
     const query: ExportCertQuery = { PgpKeyId };
-    const response = await this.transport.request<ExportCertResponse>({
-      method: "GET",
-      url: this.certUrl(),
-      query,
-      headers: this.authHeaders(),
-    });
-
-    return response.data;
+    return this.call<ExportCertResponse>("GET", this.certUrl(), { query, auth: true });
   }
 
   async importCert(request: ImportCertRequest): Promise<ImportCertResponse> {
-    const response = await this.transport.request<ImportCertResponse, ImportCertRequest>({
-      method: "PUT",
-      url: this.certUrl(),
-      body: request,
-      headers: this.authHeaders(),
-    });
-
-    return response.data;
+    return this.call<ImportCertResponse, ImportCertRequest>("PUT", this.certUrl(), { body: request, auth: true });
   }
 
   async enrollCert(request: EnrollCertRequest): Promise<EnrollCertResponse> {
-    const response = await this.transport.request<EnrollCertResponse, EnrollCertRequest>({
-      method: "POST",
-      url: this.certUrl(),
-      body: request,
-      headers: this.authHeaders(),
-    });
-
-    return response.data;
+    return this.call<EnrollCertResponse, EnrollCertRequest>("POST", this.certUrl(), { body: request, auth: true });
   }
 
   async listAccounts(): Promise<ListAccountsResponse> {
-    const response = await this.transport.request<ListAccountsResponse>({
-      method: "GET",
-      url: this.integratorAccountsUrl(),
-      headers: this.authHeaders(),
-    });
-
-    return response.data;
+    return this.call<ListAccountsResponse>("GET", this.integratorAccountsUrl(), { auth: true });
   }
 
   async logout(): Promise<LogoutResponse> {
-    const response = await this.transport.request<LogoutResponse>({
-      method: "DELETE",
-      url: this.sessionUrl(),
-      headers: this.authHeaders(),
-    });
-
+    const data = await this.call<LogoutResponse>("DELETE", this.sessionUrl(), { auth: true });
     this.tokens = {};
+    return data;
+  }
+
+  /**
+   * Single funnel for every WS API call: selects JSON vs. authenticated
+   * headers, forwards an optional body/query, and returns the response body.
+   * Centralizing this keeps header selection in one place and removes the
+   * request/`response.data` boilerplate repeated across every operation.
+   */
+  private async call<Res, Req = unknown>(
+    method: HttpMethod,
+    url: string,
+    options: { body?: Req; query?: QueryParams; auth?: boolean } = {},
+  ): Promise<Res> {
+    const request: { method: HttpMethod; url: string; headers: HttpHeaders; body?: Req; query?: QueryParams } = {
+      method,
+      url,
+      headers: options.auth ? this.authHeaders() : this.jsonHeaders(),
+    };
+    if (options.body !== undefined) request.body = options.body;
+    if (options.query) request.query = options.query;
+
+    const response = await this.transport.request<Res, Req>(request);
     return response.data;
   }
 
   private async getRegistrationChallenge(): Promise<string> {
-    const response = await this.transport.request<InitRegisterResponse>({
-      method: "GET",
-      url: this.accountUrl(),
-      headers: this.jsonHeaders(),
-    });
-
-    return response.data.Challenge;
+    const data = await this.call<InitRegisterResponse>("GET", this.accountUrl());
+    return data.Challenge;
   }
 
   private async getSessionChallenge(): Promise<string> {
-    const response = await this.transport.request<InitLoginResponse>({
-      method: "GET",
-      url: this.sessionUrl(),
-      headers: this.jsonHeaders(),
-    });
-
-    return response.data.Challenge;
+    const data = await this.call<InitLoginResponse>("GET", this.sessionUrl());
+    return data.Challenge;
   }
 
   private applyAuthResponse(response: LoginResponse | LoginMfaResponse): AuthState {
