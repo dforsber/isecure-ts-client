@@ -80,19 +80,40 @@ describe("session lifecycle", () => {
   });
 
   it("invokes the refresh hook before an authenticated call once the session has expired", async () => {
-    const onSessionExpired = vi.fn(async () => undefined);
+    vi.useFakeTimers();
+    try {
+      const onSessionExpired = vi.fn(async (channel: WSChannel) => {
+        await channel.login();
+      });
+      const client = new WSChannel(props(), { transport: authenticatingTransport("3600"), onSessionExpired });
+      await client.login();
+      expect(client.isSessionExpired()).toBe(false);
+
+      // Advance past the id-token expiry so the next authenticated call refreshes.
+      vi.setSystemTime(Date.now() + 3_600_000 + 10_000);
+      expect(client.isSessionExpired()).toBe(true);
+
+      await expect(client.listKeys()).resolves.toMatchObject({ PgpKeys: [] });
+      expect(onSessionExpired).toHaveBeenCalledOnce();
+      expect(onSessionExpired).toHaveBeenCalledWith(client);
+      expect(client.isSessionExpired()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("throws when the refresh hook runs but does not actually refresh the session", async () => {
+    const onSessionExpired = vi.fn(async () => undefined); // no-op hook
     const client = new WSChannel(props(), {
       transport: authenticatingTransport("3600"),
-      // Treat any near-future expiry as already expired.
-      expirySkewMs: 1_000_000_000_000,
+      expirySkewMs: 1_000_000_000_000, // treat any expiry as already expired
       onSessionExpired,
     });
     await client.login();
     expect(client.isSessionExpired()).toBe(true);
 
-    await client.listKeys();
+    await expect(client.listKeys()).rejects.toThrow(/still expired/);
     expect(onSessionExpired).toHaveBeenCalledOnce();
-    expect(onSessionExpired).toHaveBeenCalledWith(client);
   });
 
   it("throws a typed error on an expired session when no refresh hook is configured", async () => {

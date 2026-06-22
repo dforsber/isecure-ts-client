@@ -461,6 +461,11 @@ export class WSChannel {
     }
     if (this.onSessionExpired) {
       await this.onSessionExpired(this);
+      // Re-check: a hook that no-ops (or fails to refresh without throwing) must
+      // not let the original call proceed with the still-expired token.
+      if (this.isSessionExpired()) {
+        throw new ISecureError("onSessionExpired hook did not refresh the session; it is still expired");
+      }
       return;
     }
     throw new ISecureError("ISECure session has expired; re-authenticate before calling authenticated operations");
