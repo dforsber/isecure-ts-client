@@ -124,6 +124,74 @@ describe("transport adapters", () => {
     expect(client.calls[0]?.config.headers).toEqual({ "User-Agent": USER_AGENT });
   });
 
+  it("does not retry a non-idempotent POST on 5xx (avoids replaying mutations)", async () => {
+    const client = recordingClient(() => ({ status: 503, statusText: "Unavailable", data: {}, headers: {} }));
+    const transport = new AxiosTransport({ client: client as never, retryBaseDelayMs: 0, random: () => 0 });
+
+    await expect(transport.request({ method: "POST", url: "https://example.test/x" })).rejects.toBeInstanceOf(
+      ISecureHttpError,
+    );
+    expect(client.calls).toHaveLength(1);
+  });
+
+  it("does not retry a non-idempotent POST on a network error", async () => {
+    const client = recordingClient(() => Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }));
+    const transport = new AxiosTransport({ client: client as never, retryBaseDelayMs: 0, random: () => 0 });
+
+    await expect(transport.request({ method: "PUT", url: "https://example.test/x" })).rejects.toBeInstanceOf(
+      ISecureNetworkError,
+    );
+    expect(client.calls).toHaveLength(1);
+  });
+
+  it("retries a non-idempotent POST on 429 (rate-limited, not processed)", async () => {
+    const client = recordingClient((_config, attempt) =>
+      attempt < 1 ? { status: 429, statusText: "Too Many Requests", data: {}, headers: {} } : ok,
+    );
+    const transport = new AxiosTransport({ client: client as never, retryBaseDelayMs: 0, random: () => 0 });
+
+    const response = await transport.request({ method: "POST", url: "https://example.test/x" });
+    expect(response.status).toBe(200);
+    expect(client.calls).toHaveLength(2);
+  });
+
+  it("retries non-idempotent methods on 5xx when retryNonIdempotent is enabled", async () => {
+    const client = recordingClient((_config, attempt) =>
+      attempt < 1 ? { status: 503, statusText: "Unavailable", data: {}, headers: {} } : ok,
+    );
+    const transport = new AxiosTransport({
+      client: client as never,
+      retryNonIdempotent: true,
+      retryBaseDelayMs: 0,
+      random: () => 0,
+    });
+
+    const response = await transport.request({ method: "POST", url: "https://example.test/x" });
+    expect(response.status).toBe(200);
+    expect(client.calls).toHaveLength(2);
+  });
+
+  it("still accepts a bare axios instance for backwards compatibility", async () => {
+    const calls: unknown[] = [];
+    const axiosLike = Object.assign(
+      function axiosInstance() {
+        /* callable like a real axios instance */
+      },
+      {
+        request(config: unknown) {
+          calls.push(config);
+          return Promise.resolve(ok);
+        },
+      },
+    );
+
+    const transport = new AxiosTransport(axiosLike as never);
+    const response = await transport.request<{ ok: boolean }>({ method: "GET", url: "https://example.test/x" });
+
+    expect(response.status).toBe(200);
+    expect(calls).toHaveLength(1);
+  });
+
   it("throws useful fake transport errors for missing handlers", async () => {
     const transport = new FakeTransport();
     const request: TransportRequest = { method: "GET", url: "https://example.test/missing" };

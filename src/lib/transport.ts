@@ -47,6 +47,14 @@ export interface AxiosTransportOptions {
   retryBaseDelayMs?: number;
   /** Upper bound for a single backoff delay. Defaults to 5000. */
   maxRetryDelayMs?: number;
+  /**
+   * Allow retrying non-idempotent methods (anything but GET) on network errors
+   * and 5xx. Off by default: a timeout *after* the server processed a mutation
+   * (e.g. a file upload or a one-time verification code) would otherwise be
+   * replayed. A 429 is always safe to retry regardless of this flag, since the
+   * request was rate-limited rather than processed.
+   */
+  retryNonIdempotent?: boolean;
   /** Random source for jitter; injectable for deterministic tests. Defaults to Math.random. */
   random?: () => number;
 }
@@ -55,13 +63,25 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_RETRIES = 2;
 const DEFAULT_RETRY_BASE_MS = 300;
 const DEFAULT_MAX_RETRY_MS = 5_000;
+// Transient statuses worth retrying for an idempotent request.
 const RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+// A rate-limited request was never processed, so it is safe to retry for any method.
+const ALWAYS_RETRYABLE_STATUS = 429;
+
+function isIdempotentMethod(method: HttpMethod): boolean {
+  // Only GET is treated as safe to replay. The WS API's PUT/POST/DELETE
+  // operations have side effects (file uploads, one-time codes, enrollment)
+  // that must not be duplicated by an automatic retry.
+  return method === "GET";
+}
 
 /**
  * Axios-backed transport with production defaults: a request timeout, bounded
  * exponential-backoff retries (with full jitter and `Retry-After` support) for
- * transient network/5xx/429 failures, `AbortSignal` propagation, and
- * normalization of failures into the typed {@link ISecureError} hierarchy.
+ * transient failures, `AbortSignal` propagation, and normalization of failures
+ * into the typed {@link ISecureError} hierarchy. Retries are idempotency-aware:
+ * non-idempotent methods are only retried on a 429 (or when
+ * `retryNonIdempotent` is set), so a mutation is never silently replayed.
  * Non-2xx responses throw {@link ISecureHttpError} (the `ResponseCode !== "00"`
  * logical-failure path stays on 2xx and is handled above the transport).
  */
@@ -71,14 +91,20 @@ export class AxiosTransport implements Transport {
   private readonly retries: number;
   private readonly retryBaseDelayMs: number;
   private readonly maxRetryDelayMs: number;
+  private readonly retryNonIdempotent: boolean;
   private readonly random: () => number;
 
-  constructor(options: AxiosTransportOptions = {}) {
+  constructor(clientOrOptions: AxiosInstance | AxiosTransportOptions = {}) {
+    // Backwards-compatible: a bare axios instance (a callable function) is still
+    // accepted; otherwise the argument is an options object.
+    const options: AxiosTransportOptions =
+      typeof clientOrOptions === "function" ? { client: clientOrOptions } : clientOrOptions;
     this.client = options.client ?? axios.create();
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.retries = Math.max(0, options.retries ?? DEFAULT_RETRIES);
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_MS;
     this.maxRetryDelayMs = options.maxRetryDelayMs ?? DEFAULT_MAX_RETRY_MS;
+    this.retryNonIdempotent = options.retryNonIdempotent ?? false;
     this.random = options.random ?? Math.random;
   }
 
@@ -86,6 +112,7 @@ export class AxiosTransport implements Transport {
     request: TransportRequest<RequestBody>,
   ): Promise<TransportResponse<ResponseBody>> {
     const config = this.buildConfig(request);
+    const retriable = this.retryNonIdempotent || isIdempotentMethod(request.method);
 
     for (let attempt = 0; ; attempt += 1) {
       this.throwIfAborted(request.signal);
@@ -97,7 +124,9 @@ export class AxiosTransport implements Transport {
         if (isAbortError(error, request.signal)) {
           throw new ISecureAbortError(undefined, { cause: error });
         }
-        if (attempt < this.retries) {
+        // A network error may have reached the server, so only retry when the
+        // method is safe to replay.
+        if (retriable && attempt < this.retries) {
           await this.backoff(attempt, undefined, request.signal);
           continue;
         }
@@ -108,7 +137,9 @@ export class AxiosTransport implements Transport {
         return { status: response.status, statusText: response.statusText, data: response.data };
       }
 
-      if (RETRYABLE_STATUSES.has(response.status) && attempt < this.retries) {
+      const canRetryStatus =
+        response.status === ALWAYS_RETRYABLE_STATUS || (retriable && RETRYABLE_STATUSES.has(response.status));
+      if (canRetryStatus && attempt < this.retries) {
         await this.backoff(attempt, retryAfterMs(response.headers), request.signal);
         continue;
       }
