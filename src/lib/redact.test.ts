@@ -66,7 +66,18 @@ describe("redactUrl", () => {
     );
   });
 
-  it("leaves URLs without emails untouched", () => {
-    expect(redactUrl("https://api.test/v2/files/nordea")).toBe("https://api.test/v2/files/nordea");
+  it("masks phone numbers in the phone-verification path (encoded or plain)", () => {
+    expect(redactUrl("https://api.test/v2/account/user%40example.test/admin/%2B358401234567")).toBe(
+      `https://api.test/v2/account/${REDACTED}/admin/${REDACTED}`,
+    );
+    expect(redactUrl("https://api.test/v2/account/x%40y.test/admin/+358401234567")).toBe(
+      `https://api.test/v2/account/${REDACTED}/admin/${REDACTED}`,
+    );
+  });
+
+  it("leaves URLs without emails or phones untouched", () => {
+    expect(redactUrl("https://api.test/v2/files/nordea/CAMT/227166")).toBe(
+      "https://api.test/v2/files/nordea/CAMT/227166",
+    );
   });
 });

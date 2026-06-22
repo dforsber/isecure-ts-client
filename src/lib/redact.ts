@@ -75,6 +75,9 @@ const JWT_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 const LONG_TOKEN_PATTERN = /^[A-Za-z0-9+/=_-]{40,}$/;
 const CHALLENGE_PATTERN = /^[A-Za-z0-9+/=]+\|\d+\|[0-9a-f-]+$/i;
 const EMAIL_PATTERN = /[A-Za-z0-9._%+-]+(?:@|%40)[A-Za-z0-9.-]+\.[A-Za-z]{2,}/gi;
+// Phone numbers carry a country-code prefix (`+`, or `%2B` once URL-encoded into
+// a path), so this stays precise and won't match plain numeric ids.
+const PHONE_PATTERN = /(?:%2B|\+)\d{6,}/gi;
 
 function looksSecret(value: string): boolean {
   return JWT_PATTERN.test(value) || LONG_TOKEN_PATTERN.test(value) || CHALLENGE_PATTERN.test(value);
@@ -106,7 +109,7 @@ export function redactValue(value: unknown, mode: RedactionMode = "balanced"): u
   return value;
 }
 
-/** Masks email addresses embedded in a request URL (e.g. the account path). */
+/** Masks email addresses and phone numbers embedded in a request URL (the account/phone paths). */
 export function redactUrl(url: string): string {
-  return url.replace(EMAIL_PATTERN, REDACTED);
+  return url.replace(EMAIL_PATTERN, REDACTED).replace(PHONE_PATTERN, REDACTED);
 }
