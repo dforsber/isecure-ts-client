@@ -45,8 +45,12 @@ type AuthRule = (mode: Mode, response: AuthResponse, tokens: SessionTokens) => A
  * (e.g. "Verify phone number with received SMS code").
  */
 const AUTH_RULES: readonly AuthRule[] = [
+  // Authentication is keyed on the id token from *this* response, not the merged
+  // session. A refresh re-login (e.g. via loginWithPrompt) still holds the prior
+  // session's id token/API key, so keying on the merged tokens would misclassify
+  // an MFA-stage re-login as already authenticated.
   (mode, response, tokens) =>
-    tokens.apiKey && tokens.idToken
+    response.IdToken && tokens.apiKey && tokens.idToken
       ? {
           status: "authenticated",
           mode,
