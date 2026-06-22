@@ -49,6 +49,7 @@ import {
   type VerifyPhoneRequest,
 } from "./api-types.js";
 import { encryptPasswordChallenge } from "./challenge-crypto.js";
+import { ISecureError } from "./errors.js";
 import type { RedactionMode } from "./redact.js";
 import {
   AxiosTransport,
@@ -78,6 +79,19 @@ export interface WSChannelOptions {
   logger?: Logger;
   /** Redaction strategy for injected-logger debug output. Defaults to "balanced". */
   redaction?: RedactionMode;
+  /**
+   * Optional hook invoked before an authenticated call when the current session
+   * has expired (see {@link WSChannel.isSessionExpired}). Use it to re-establish
+   * a session (e.g. `loginWithPrompt`). It must not itself call authenticated
+   * operations, to avoid re-entry. When absent, an expired session throws an
+   * {@link ISecureError} instead of sending a request doomed to 401.
+   */
+  onSessionExpired?: (channel: WSChannel) => Promise<unknown>;
+  /**
+   * Clock skew, in milliseconds, treated as already-expired ahead of the real
+   * expiry so refresh happens slightly early. Defaults to 5000.
+   */
+  expirySkewMs?: number;
 }
 
 export interface Logger {
@@ -102,15 +116,23 @@ class NoopLogger implements Logger {
   error(): void {}
 }
 
+const DEFAULT_EXPIRY_SKEW_MS = 5_000;
+
 export class WSChannel {
   private readonly transport: Transport;
   private readonly logger: Logger;
+  private readonly onSessionExpired: ((channel: WSChannel) => Promise<unknown>) | undefined;
+  private readonly expirySkewMs: number;
   private tokens: SessionTokens = {};
+  /** Absolute epoch ms when the current id token expires, if known. */
+  private expiresAt: number | undefined;
 
   constructor(
     public props: IWSChannel,
     options: WSChannelOptions = {},
   ) {
+    this.onSessionExpired = options.onSessionExpired;
+    this.expirySkewMs = options.expirySkewMs ?? DEFAULT_EXPIRY_SKEW_MS;
     this.logger = options.logger ?? new NoopLogger();
     const baseTransport = options.transport ?? new AxiosTransport();
     // Only pay the redaction/clone cost when a logger is actually injected;
@@ -127,6 +149,28 @@ export class WSChannel {
 
   get session(): Readonly<SessionTokens> {
     return this.tokens;
+  }
+
+  /** Absolute epoch-ms expiry of the current id token, or `undefined` if unknown. */
+  get sessionExpiresAt(): number | undefined {
+    return this.expiresAt;
+  }
+
+  /** True once an id token + API key are present, regardless of expiry. */
+  isAuthenticated(): boolean {
+    return Boolean(this.tokens.idToken && this.tokens.apiKey);
+  }
+
+  /**
+   * True when an authenticated session exists but its id token has expired
+   * (within the configured skew). Returns false when no session exists or when
+   * the backend supplied no expiry to reason about.
+   */
+  isSessionExpired(): boolean {
+    if (!this.isAuthenticated() || this.expiresAt === undefined) {
+      return false;
+    }
+    return Date.now() + this.expirySkewMs >= this.expiresAt;
   }
 
   updateProps(overrideProps: Partial<IWSChannel>): void {
@@ -371,8 +415,10 @@ export class WSChannel {
   }
 
   async logout(): Promise<LogoutResponse> {
-    const data = await this.call<LogoutResponse>("DELETE", this.sessionUrl(), { auth: true });
+    // Logout must work on an expired session, so it skips the freshness guard.
+    const data = await this.call<LogoutResponse>("DELETE", this.sessionUrl(), { auth: true, skipFreshness: true });
     this.tokens = {};
+    this.expiresAt = undefined;
     return data;
   }
 
@@ -385,8 +431,12 @@ export class WSChannel {
   private async call<Res, Req = unknown>(
     method: HttpMethod,
     url: string,
-    options: { body?: Req; query?: QueryParams; auth?: boolean } = {},
+    options: { body?: Req; query?: QueryParams; auth?: boolean; skipFreshness?: boolean } = {},
   ): Promise<Res> {
+    if (options.auth && !options.skipFreshness) {
+      await this.ensureFreshSession();
+    }
+
     const request: { method: HttpMethod; url: string; headers: HttpHeaders; body?: Req; query?: QueryParams } = {
       method,
       url,
@@ -397,6 +447,28 @@ export class WSChannel {
 
     const response = await this.transport.request<Res, Req>(request);
     return response.data;
+  }
+
+  /**
+   * Guards authenticated calls against a stale id token: if the session has
+   * expired, invokes the configured refresh hook (which is expected to
+   * re-establish the session), or throws a typed error when none is configured
+   * rather than sending a request that would 401.
+   */
+  private async ensureFreshSession(): Promise<void> {
+    if (!this.isSessionExpired()) {
+      return;
+    }
+    if (this.onSessionExpired) {
+      await this.onSessionExpired(this);
+      // Re-check: a hook that no-ops (or fails to refresh without throwing) must
+      // not let the original call proceed with the still-expired token.
+      if (this.isSessionExpired()) {
+        throw new ISecureError("onSessionExpired hook did not refresh the session; it is still expired");
+      }
+      return;
+    }
+    throw new ISecureError("ISECure session has expired; re-authenticate before calling authenticated operations");
   }
 
   private async getRegistrationChallenge(): Promise<string> {
@@ -411,6 +483,7 @@ export class WSChannel {
 
   private applyAuthResponse(response: LoginResponse | LoginMfaResponse): AuthState {
     this.tokens = mergeTokens(this.tokens, response);
+    this.expiresAt = computeExpiry(this.tokens);
     return classifyAuthResponse(this.props.Mode, response, this.tokens);
   }
 
@@ -482,6 +555,22 @@ export class WSChannel {
   private url(...segments: string[]): string {
     return `${this.props.BaseUrl.replace(/\/+$/, "")}/${segments.map(encodeURIComponent).join("/")}`;
   }
+}
+
+/**
+ * Computes an absolute expiry (epoch ms) from a freshly authenticated session.
+ * Only meaningful once an id token is present and the backend returned an
+ * `ExpiresIn` (seconds); otherwise expiry is unknown and refresh is skipped.
+ */
+function computeExpiry(tokens: SessionTokens): number | undefined {
+  if (!tokens.idToken || tokens.expiresIn === undefined) {
+    return undefined;
+  }
+  const seconds = Number(tokens.expiresIn);
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return undefined;
+  }
+  return Date.now() + seconds * 1000;
 }
 
 function promptStepFor(status: AuthState["status"]): AuthStep | undefined {

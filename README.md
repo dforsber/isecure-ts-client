@@ -194,6 +194,21 @@ const client = new WSChannel(props, {
 
 The transport also honors an `AbortSignal` on each `TransportRequest` (cancelling an in-flight request or a pending retry backoff), which custom transports and integrations can use directly.
 
+## Session Lifecycle
+
+The SDK tracks the id-token expiry returned at login. Inspect it with `client.isAuthenticated()`, `client.isSessionExpired()`, and `client.sessionExpiresAt`. When an authenticated call is made on an expired session, the SDK invokes an optional refresh hook so you can re-establish the session in one place instead of handling 401s everywhere:
+
+```ts
+const client = new WSChannel(props, {
+  expirySkewMs: 30_000, // refresh 30s early
+  onSessionExpired: async (channel) => {
+    await channel.loginWithPrompt(promptAdapter);
+  },
+});
+```
+
+Without a hook, an authenticated call on an expired session throws `ISecureError` rather than sending a request that would 401. `logout()` always works, even when expired.
+
 ## Runtime Support
 
 The SDK supports Node.js and modern browser bundlers. Password challenge encryption uses WebCrypto-compatible RSA-OAEP with SHA-1, so browser runtimes must provide `globalThis.crypto.subtle`.
