@@ -29,9 +29,37 @@ export type RegisterResponse = JsonResponse<"Register", 201>;
 export type InitRegisterResponse = JsonResponse<"InitRegister", 200>;
 export type InitLoginResponse = JsonResponse<"InitLogin", 200>;
 export type LoginRequest = JsonRequest<"Login">;
-export type LoginResponse = JsonResponse<"Login", 200>;
-export type LoginMfaRequest = JsonRequest<"LoginMFA">;
-export type LoginMfaResponse = JsonResponse<"LoginMFA", 200>;
+
+/**
+ * TOTP-related fields layered on top of the generated login/MFA shapes. They are
+ * declared here (rather than regenerated into wsapi-v2.ts) so the SDK can add
+ * Google Authenticator support ahead of the OpenAPI spec being regenerated; once
+ * the spec carries them these intersections become redundant no-ops.
+ */
+type TotpResponseFields = {
+  /** Cognito challenge name echoed by login: `SMS_MFA` or `SOFTWARE_TOKEN_MFA`. */
+  ChallengeName?: string;
+  /** TOTP shared secret, present only when `SetupTOTP` enrollment was requested. */
+  SecretCode?: string;
+  /** `otpauth://` URI for the enrollment QR code, present with `SecretCode`. */
+  OtpauthUri?: string;
+};
+
+export type LoginResponse = JsonResponse<"Login", 200> & TotpResponseFields;
+export type LoginMfaRequest = JsonRequest<"LoginMFA"> & {
+  /** Echo the `ChallengeName` from the login response so the API answers the right factor. */
+  ChallengeName?: string;
+  /** Request TOTP enrollment: the response then also carries SecretCode/OtpauthUri/AccessToken. */
+  SetupTOTP?: boolean;
+};
+export type LoginMfaResponse = JsonResponse<"LoginMFA", 200> & TotpResponseFields;
+
+/** Confirm TOTP enrollment. No generated operation yet (see TotpResponseFields). */
+export interface VerifyTotpRequest {
+  Code: string;
+  AccessToken: string;
+}
+export type VerifyTotpResponse = ApiResponse;
 export type VerifyEmailRequest = JsonRequest<"VerifyEmail">;
 export type VerifyPhoneRequest = JsonRequest<"VerifyPhone">;
 export type UploadKeyRequest = JsonRequest<"UploadKey">;

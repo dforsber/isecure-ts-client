@@ -47,6 +47,8 @@ import {
   type UploadKeyRequest,
   type VerifyEmailRequest,
   type VerifyPhoneRequest,
+  type VerifyTotpRequest,
+  type VerifyTotpResponse,
 } from "./api-types.js";
 import { encryptPasswordChallenge } from "./challenge-crypto.js";
 import { ISecureError } from "./errors.js";
@@ -128,6 +130,8 @@ export class WSChannel {
   private tokens: SessionTokens = {};
   /** Absolute epoch ms when the current id token expires, if known. */
   private expiresAt: number | undefined;
+  /** ChallengeName from the last login response, echoed back on the mfacode call. */
+  private lastChallengeName: string | undefined;
 
   constructor(
     public props: IWSChannel,
@@ -234,12 +238,25 @@ export class WSChannel {
     return this.applyAuthResponse(data);
   }
 
-  async submitMfaCode(code: string): Promise<AuthState> {
+  /**
+   * Submits an MFA code (SMS or authenticator/TOTP). The `ChallengeName` from
+   * the login response is echoed automatically so the API answers the right
+   * factor. Pass `{ setupTotp: true }` to begin TOTP enrollment: the returned
+   * `authenticated` state then also carries a `totpEnrollment` payload (secret,
+   * QR URI, and an access token) to drive {@link verifyTotp}.
+   */
+  async submitMfaCode(code: string, options: { setupTotp?: boolean } = {}): Promise<AuthState> {
     if (!this.tokens.session) {
       throw new Error("Cannot submit MFA code before login returns a session token");
     }
 
     const request: LoginMfaRequest = { Code: code, Session: this.tokens.session };
+    if (this.lastChallengeName) {
+      request.ChallengeName = this.lastChallengeName;
+    }
+    if (options.setupTotp) {
+      request.SetupTOTP = true;
+    }
     const data = await this.call<LoginMfaResponse, LoginMfaRequest>("PUT", this.urls.mfacode(), {
       body: request,
     });
@@ -249,6 +266,21 @@ export class WSChannel {
 
   async loginMFA(code: string): Promise<AuthState> {
     return this.submitMfaCode(code);
+  }
+
+  /**
+   * Confirms a TOTP enrollment started via `submitMfaCode(code, { setupTotp: true })`.
+   * Pass the `accessToken` from the returned `totpEnrollment` (held in memory by
+   * the caller) and the first 6-digit code from the authenticator app. On success
+   * TOTP becomes the preferred factor; SMS stays enabled as a fallback.
+   */
+  async verifyTotp(accessToken: string, code: string): Promise<AuthState> {
+    const request: VerifyTotpRequest = { AccessToken: accessToken, Code: code };
+    const data = await this.call<VerifyTotpResponse, VerifyTotpRequest>("PUT", this.urls.verifytotp(), {
+      body: request,
+    });
+
+    return classifyVerificationResponse(this.props.Mode, "totp", data);
   }
 
   async verifyPhone(code: string): Promise<AuthState> {
@@ -482,7 +514,16 @@ export class WSChannel {
   private applyAuthResponse(response: LoginResponse | LoginMfaResponse): AuthState {
     this.tokens = mergeTokens(this.tokens, response);
     this.expiresAt = computeExpiry(this.tokens);
-    return classifyAuthResponse(this.props.Mode, response, this.tokens);
+    if (response.ChallengeName) {
+      this.lastChallengeName = response.ChallengeName;
+    }
+    const state = classifyAuthResponse(this.props.Mode, response, this.tokens);
+    // The TOTP enrollment access token is surfaced to the caller via
+    // state.totpEnrollment only; do not retain it in the persisted session.
+    if (state.status === "authenticated" && state.totpEnrollment) {
+      this.tokens = { ...this.tokens, accessToken: undefined };
+    }
+    return state;
   }
 
   private log(level: Exclude<LogLevel, "silent">, message: string, meta?: unknown): void {

@@ -12,6 +12,7 @@ export type {
   AuthStep,
   ResponseEnvelope,
   SessionTokens,
+  TotpEnrollment,
 } from "./auth-state.js";
 
 export function mergeTokens(current: SessionTokens, response: AuthResponse): SessionTokens {
@@ -56,6 +57,18 @@ const AUTH_RULES: readonly AuthRule[] = [
           mode,
           tokens: { ...tokens, apiKey: tokens.apiKey, idToken: tokens.idToken },
           response,
+          // A login made with setupTotp also returns the enrollment secret +
+          // access token alongside the session; surface them for the caller to
+          // drive verifyTotp. AccessToken is held by the caller only.
+          ...(response.SecretCode && response.OtpauthUri && response.AccessToken
+            ? {
+                totpEnrollment: {
+                  secret: response.SecretCode,
+                  otpauthUri: response.OtpauthUri,
+                  accessToken: response.AccessToken,
+                },
+              }
+            : {}),
         }
       : undefined,
   (mode, response) =>
@@ -83,10 +96,25 @@ const AUTH_RULES: readonly AuthRule[] = [
         }
       : undefined,
   (mode, response, tokens) =>
-    tokens.session || responseTextIncludes(response, "sms code")
-      ? { status: "needs_mfa", mode, session: tokens.session ?? "", response }
+    tokens.session || responseTextIncludes(response, "sms code") || responseTextIncludes(response, "authenticator code")
+      ? { status: "needs_mfa", mode, session: tokens.session ?? "", method: mfaMethod(response), response }
       : undefined,
 ];
+
+/**
+ * The MFA factor a challenge is for. Keyed on the Cognito `ChallengeName` echoed
+ * by the API (`SOFTWARE_TOKEN_MFA` → TOTP), falling back to the response text
+ * for older responses that predate the field, and defaulting to SMS.
+ */
+function mfaMethod(response: AuthResponse): "sms" | "totp" {
+  if (response.ChallengeName === "SOFTWARE_TOKEN_MFA") {
+    return "totp";
+  }
+  if (response.ChallengeName === "SMS_MFA") {
+    return "sms";
+  }
+  return responseTextIncludes(response, "authenticator code") ? "totp" : "sms";
+}
 
 export function classifyAuthResponse(mode: Mode, response: AuthResponse, tokens: SessionTokens): AuthState {
   if (response.ResponseCode !== "00") {
@@ -165,7 +193,7 @@ export function classifyErrorReason(response: ResponseEnvelope): AuthErrorReason
 
 export function classifyVerificationResponse(
   mode: Mode,
-  verification: "email" | "phone",
+  verification: "email" | "phone" | "totp",
   response: ResponseEnvelope,
 ): AuthState {
   if (response.ResponseCode === "00") {

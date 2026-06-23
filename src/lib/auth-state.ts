@@ -33,17 +33,35 @@ export type AuthErrorReason =
 /** The verification/MFA step a multi-step login is waiting on. */
 export type AuthStep = "mfa" | "email_verification" | "phone_verification";
 
+/** Details returned when a login was made with TOTP enrollment requested. */
+export interface TotpEnrollment {
+  /** Shared secret for manual authenticator entry. */
+  secret: string;
+  /** `otpauth://` URI for rendering the enrollment QR code. */
+  otpauthUri: string;
+  /**
+   * Cognito access token to pass to {@link WSChannel.verifyTotp}. Held by the
+   * caller in memory only for the enrollment ceremony; the SDK does not retain
+   * it in {@link SessionTokens}.
+   */
+  accessToken: string;
+}
+
 export type AuthState =
   | {
       status: "authenticated";
       mode: Mode;
       tokens: Required<Pick<SessionTokens, "apiKey" | "idToken">> & SessionTokens;
       response: AuthResponse;
+      /** Present only when login was made with `setupTotp` and association succeeded. */
+      totpEnrollment?: TotpEnrollment;
     }
   | {
       status: "needs_mfa";
       mode: Mode;
       session: string;
+      /** Which MFA factor Cognito is challenging: SMS or authenticator (TOTP). */
+      method: "sms" | "totp";
       response: AuthResponse;
     }
   | {
@@ -60,7 +78,7 @@ export type AuthState =
   | {
       status: "verification_accepted";
       mode: Mode;
-      verification: "email" | "phone";
+      verification: "email" | "phone" | "totp";
       response: ResponseEnvelope;
     }
   | {
