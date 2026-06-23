@@ -96,9 +96,7 @@ const AUTH_RULES: readonly AuthRule[] = [
         }
       : undefined,
   (mode, response, tokens) =>
-    tokens.session ||
-    responseTextIncludes(response, "sms code") ||
-    responseTextIncludes(response, "authenticator code")
+    tokens.session || responseTextIncludes(response, "sms code") || responseTextIncludes(response, "authenticator code")
       ? { status: "needs_mfa", mode, session: tokens.session ?? "", method: mfaMethod(response), response }
       : undefined,
 ];

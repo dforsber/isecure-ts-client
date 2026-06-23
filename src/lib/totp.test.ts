@@ -133,7 +133,12 @@ describe("WSChannel TOTP MFA", () => {
         return response({ Challenge: challenge, ResponseCode: "00", ResponseText: "OK" });
       }
       if (match("POST", "/session/user%40example.test/admin")(request)) {
-        return response({ ResponseCode: "00", ResponseText: "Give SMS code", Session: "sess", ChallengeName: "SMS_MFA" });
+        return response({
+          ResponseCode: "00",
+          ResponseText: "Give SMS code",
+          Session: "sess",
+          ChallengeName: "SMS_MFA",
+        });
       }
       if (match("PUT", "/session/user%40example.test/admin/mfacode")(request)) {
         return response({
