@@ -102,6 +102,7 @@ Admin login and first-time registration may require MFA, email, or phone verific
 const state = await client.login();
 
 if (state.status === "needs_mfa") {
+  // state.method is "sms" or "totp" (Google Authenticator) so you can label the prompt.
   await client.submitMfaCode("123456");
 }
 
@@ -111,6 +112,24 @@ if (state.status === "needs_email_verification") {
 
 if (state.status === "needs_phone_verification") {
   await client.verifyPhone("123456");
+}
+```
+
+### Enrolling Google Authenticator (TOTP)
+
+Request enrollment while completing an admin login, render the returned QR
+(`otpauthUri`) or secret, then confirm the first code. TOTP becomes the preferred
+factor; SMS stays enabled as a fallback.
+
+```ts
+// Complete login with the SMS code AND ask to set up TOTP in one step:
+const state = await client.submitMfaCode(smsCode, { setupTotp: true });
+
+if (state.status === "authenticated" && state.totpEnrollment) {
+  const { secret, otpauthUri, accessToken } = state.totpEnrollment;
+  // Render otpauthUri as a QR code (or show `secret` for manual entry).
+  // accessToken is held in memory only — do not persist it.
+  await client.verifyTotp(accessToken, codeFromAuthenticatorApp);
 }
 ```
 

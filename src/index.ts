@@ -18,6 +18,7 @@ export {
   type AuthStep,
   type ResponseEnvelope,
   type SessionTokens,
+  type TotpEnrollment,
 } from "./lib/auth.js";
 export {
   AxiosTransport,
@@ -77,5 +78,7 @@ export {
   type UploadKeyRequest,
   type VerifyEmailRequest,
   type VerifyPhoneRequest,
+  type VerifyTotpRequest,
+  type VerifyTotpResponse,
 } from "./lib/api-types.js";
 export type { components, operations, paths } from "./generated/wsapi-v2.js";
