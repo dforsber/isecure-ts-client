@@ -33,6 +33,10 @@ export class UrlBuilder {
     return `${this.session()}/mfacode`;
   }
 
+  selectmfa(): string {
+    return `${this.session()}/selectmfa`;
+  }
+
   verifytotp(): string {
     return `${this.session()}/verifytotp`;
   }

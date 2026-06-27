@@ -37,13 +37,34 @@ export type LoginRequest = JsonRequest<"Login">;
  * the spec carries them these intersections become redundant no-ops.
  */
 type TotpResponseFields = {
-  /** Cognito challenge name echoed by login: `SMS_MFA` or `SOFTWARE_TOKEN_MFA`. */
+  /** Cognito challenge name echoed by login: `SMS_MFA`, `SOFTWARE_TOKEN_MFA`, or `SELECT_MFA_TYPE`. */
   ChallengeName?: string;
   /** TOTP shared secret, present only when `SetupTOTP` enrollment was requested. */
   SecretCode?: string;
   /** `otpauth://` URI for the enrollment QR code, present with `SecretCode`. */
   OtpauthUri?: string;
+  /**
+   * Present when `ChallengeName` is `SELECT_MFA_TYPE`. Normalized list of offerable
+   * Cognito factor names, e.g. `["SMS_MFA", "SOFTWARE_TOKEN_MFA"]`.
+   */
+  MfaOptions?: string[];
+  /**
+   * Present when `ChallengeName` is `SELECT_MFA_TYPE` and SMS is among the options.
+   * Masked destination shown to the user so they know where an SMS would go.
+   */
+  SmsDestination?: string;
 };
+
+/** Request body for `PUT /session/{Email}/{Mode}/selectmfa`. */
+export interface SelectMfaRequest {
+  /** The factor the user chose to use for this login. */
+  MfaType: "SMS_MFA" | "SOFTWARE_TOKEN_MFA";
+  /** The `Session` token from the `SELECT_MFA_TYPE` challenge response. */
+  Session: string;
+}
+
+/** Response envelope for `PUT /session/{Email}/{Mode}/selectmfa`. */
+export type SelectMfaResponse = ApiResponse & TotpResponseFields;
 
 export type LoginResponse = JsonResponse<"Login", 200> & TotpResponseFields;
 export type LoginMfaRequest = JsonRequest<"LoginMFA"> & {
