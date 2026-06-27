@@ -11,6 +11,8 @@ export { redactUrl, redactValue, type RedactionMode } from "./lib/redact.js";
 export { SDK_VERSION, USER_AGENT } from "./lib/version.js";
 export {
   classifyErrorReason,
+  cognitoToMethod,
+  methodToCognito,
   type AuthErrorReason,
   type AuthPromptAdapter,
   type AuthResponse,
@@ -71,6 +73,8 @@ export {
   type PgpKeyPurpose,
   type RegisterRequest,
   type RegisterResponse,
+  type SelectMfaRequest,
+  type SelectMfaResponse,
   type ShareCertsResponse,
   type SupportedOperation,
   type UnshareCertsResponse,

@@ -57,6 +57,16 @@ export type AuthState =
       totpEnrollment?: TotpEnrollment;
     }
   | {
+      status: "needs_mfa_selection";
+      mode: Mode;
+      session: string;
+      /** Normalized list of factor methods the user may choose from. */
+      methods: ("sms" | "totp")[];
+      /** Masked SMS destination shown to the user when SMS is offered, e.g. `+*****5507`. */
+      smsDestination?: string;
+      response: AuthResponse;
+    }
+  | {
       status: "needs_mfa";
       mode: Mode;
       session: string;
@@ -101,4 +111,11 @@ export interface AuthPromptAdapter {
   requestMfaCode(state: Extract<AuthState, { status: "needs_mfa" }>): Promise<string>;
   requestEmailCode(state: Extract<AuthState, { status: "needs_email_verification" }>): Promise<string>;
   requestPhoneCode(state: Extract<AuthState, { status: "needs_phone_verification" }>): Promise<string>;
+  /**
+   * Optional hook called when the server returns a `SELECT_MFA_TYPE` challenge
+   * (the user has both SMS and TOTP enrolled with no preferred factor). Return
+   * the method to use for this login. When absent, `loginWithPrompt` defaults to
+   * TOTP if offered, otherwise the first offered method.
+   */
+  requestMfaSelection?(state: Extract<AuthState, { status: "needs_mfa_selection" }>): Promise<"sms" | "totp">;
 }

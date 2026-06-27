@@ -15,6 +15,37 @@ export type {
   TotpEnrollment,
 } from "./auth-state.js";
 
+/**
+ * Canonical mapping between Cognito factor challenge names and the SDK's
+ * human-friendly method names. Centralised here so classification and
+ * `selectMfaType` both use the same translation.
+ */
+const COGNITO_TO_METHOD: Record<string, "sms" | "totp"> = {
+  SMS_MFA: "sms",
+  SOFTWARE_TOKEN_MFA: "totp",
+};
+
+const METHOD_TO_COGNITO: Record<"sms" | "totp", "SMS_MFA" | "SOFTWARE_TOKEN_MFA"> = {
+  sms: "SMS_MFA",
+  totp: "SOFTWARE_TOKEN_MFA",
+};
+
+/**
+ * Maps a Cognito factor name (`SMS_MFA` / `SOFTWARE_TOKEN_MFA`) to the SDK
+ * method name (`"sms"` / `"totp"`). Unrecognised values fall back to `"sms"`.
+ */
+export function cognitoToMethod(cognitoName: string): "sms" | "totp" {
+  return COGNITO_TO_METHOD[cognitoName] ?? "sms";
+}
+
+/**
+ * Maps an SDK method name (`"sms"` / `"totp"`) to the Cognito factor name used
+ * in `MfaType` request bodies.
+ */
+export function methodToCognito(method: "sms" | "totp"): "SMS_MFA" | "SOFTWARE_TOKEN_MFA" {
+  return METHOD_TO_COGNITO[method];
+}
+
 export function mergeTokens(current: SessionTokens, response: AuthResponse): SessionTokens {
   return {
     accessToken: response.AccessToken ?? current.accessToken,
@@ -40,10 +71,13 @@ type AuthRule = (mode: Mode, response: AuthResponse, tokens: SessionTokens) => A
  *   2. explicit phone-verification prompt
  *   3. email-verification prompt with a usable access token
  *   4. email-verification prompt without a token (cannot be driven by the SDK)
- *   5. MFA challenge (session token or "sms code" fallback)
+ *   5. MFA factor-selection challenge (SELECT_MFA_TYPE) — MUST precede needs_mfa
+ *   6. MFA challenge (session token or "sms code" fallback)
  * Verification prompts deliberately precede the MFA heuristic because such a
  * response can also carry a Cognito session token or the substring "sms code"
- * (e.g. "Verify phone number with received SMS code").
+ * (e.g. "Verify phone number with received SMS code"). The selection rule (5)
+ * must precede the MFA rule (6) because a SELECT_MFA_TYPE response also carries
+ * a session token, which would otherwise match the needs_mfa heuristic.
  */
 const AUTH_RULES: readonly AuthRule[] = [
   // Authentication is keyed on the id token from *this* response, not the merged
@@ -95,6 +129,20 @@ const AUTH_RULES: readonly AuthRule[] = [
           response,
         }
       : undefined,
+  // MFA factor-selection challenge: Cognito returns SELECT_MFA_TYPE when the user
+  // has 2+ active factors and no preferred factor. Must be ordered BEFORE needs_mfa
+  // because the response also carries a session token.
+  (mode, response, tokens) =>
+    response.ChallengeName === "SELECT_MFA_TYPE"
+      ? {
+          status: "needs_mfa_selection",
+          mode,
+          session: tokens.session ?? "",
+          methods: Array.isArray(response.MfaOptions) ? response.MfaOptions.map(cognitoToMethod) : [],
+          ...(response.SmsDestination ? { smsDestination: response.SmsDestination } : {}),
+          response,
+        }
+      : undefined,
   (mode, response, tokens) =>
     tokens.session || responseTextIncludes(response, "sms code") || responseTextIncludes(response, "authenticator code")
       ? { status: "needs_mfa", mode, session: tokens.session ?? "", method: mfaMethod(response), response }
@@ -103,15 +151,12 @@ const AUTH_RULES: readonly AuthRule[] = [
 
 /**
  * The MFA factor a challenge is for. Keyed on the Cognito `ChallengeName` echoed
- * by the API (`SOFTWARE_TOKEN_MFA` → TOTP), falling back to the response text
- * for older responses that predate the field, and defaulting to SMS.
+ * by the API (`SOFTWARE_TOKEN_MFA` → TOTP, `SMS_MFA` → SMS), falling back to the
+ * response text for older responses that predate the field, and defaulting to SMS.
  */
 function mfaMethod(response: AuthResponse): "sms" | "totp" {
-  if (response.ChallengeName === "SOFTWARE_TOKEN_MFA") {
-    return "totp";
-  }
-  if (response.ChallengeName === "SMS_MFA") {
-    return "sms";
+  if (response.ChallengeName === "SOFTWARE_TOKEN_MFA" || response.ChallengeName === "SMS_MFA") {
+    return cognitoToMethod(response.ChallengeName);
   }
   return responseTextIncludes(response, "authenticator code") ? "totp" : "sms";
 }

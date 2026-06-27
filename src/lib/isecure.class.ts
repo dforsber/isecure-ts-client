@@ -2,6 +2,7 @@ import {
   classifyAuthResponse,
   classifyVerificationResponse,
   mergeTokens,
+  methodToCognito,
   type AuthPromptAdapter,
   type AuthState,
   type AuthStep,
@@ -47,6 +48,8 @@ import {
   type UploadKeyRequest,
   type VerifyEmailRequest,
   type VerifyPhoneRequest,
+  type SelectMfaRequest,
+  type SelectMfaResponse,
   type VerifyTotpRequest,
   type VerifyTotpResponse,
 } from "./api-types.js";
@@ -269,6 +272,30 @@ export class WSChannel {
   }
 
   /**
+   * Selects an MFA factor after the server returns a `SELECT_MFA_TYPE` challenge
+   * (i.e. when `login()` resolves to `needs_mfa_selection`). Posts the chosen
+   * factor to the `selectmfa` endpoint; the server returns the factor's own
+   * challenge, which this method classifies and returns as `needs_mfa` with the
+   * chosen `method`. Call `submitMfaCode(code)` next to complete authentication.
+   *
+   * Throws if called before a session token is available (i.e. before `login()`
+   * returns `needs_mfa_selection`).
+   */
+  async selectMfaType(method: "sms" | "totp"): Promise<AuthState> {
+    if (!this.tokens.session) {
+      throw new Error("Cannot select MFA type before login returns a SELECT_MFA_TYPE session token");
+    }
+
+    const request: SelectMfaRequest = {
+      MfaType: methodToCognito(method),
+      Session: this.tokens.session,
+    };
+
+    const data = await this.call<SelectMfaResponse, SelectMfaRequest>("PUT", this.urls.selectmfa(), { body: request });
+    return this.applyAuthResponse(data);
+  }
+
+  /**
    * Confirms a TOTP enrollment started via `submitMfaCode(code, { setupTotp: true })`.
    * Pass the `accessToken` from the returned `totpEnrollment` (held in memory by
    * the caller) and the first 6-digit code from the authenticator app. On success
@@ -327,6 +354,23 @@ export class WSChannel {
         }
         driven[step] = (driven[step] ?? 0) + 1;
         lastStep = step;
+      }
+
+      if (state.status === "needs_mfa_selection") {
+        // Factor selection is forward progress toward MFA — do not count it in
+        // `driven` so the subsequent needs_mfa step is not mistaken for a stall.
+        // Pick a method: delegate to the adapter hook if provided, otherwise
+        // default to TOTP when offered (spec default), else the first option.
+        let method: "sms" | "totp";
+        if (prompt.requestMfaSelection) {
+          method = await prompt.requestMfaSelection(state);
+        } else {
+          method = state.methods.includes("totp") ? "totp" : (state.methods[0] ?? "totp");
+        }
+        // Roll back the driven count so the following needs_mfa step is seen fresh.
+        driven.mfa = 0;
+        state = await this.selectMfaType(method);
+        continue;
       }
 
       if (state.status === "needs_mfa") {
@@ -570,6 +614,7 @@ function computeExpiry(tokens: SessionTokens): number | undefined {
 
 function promptStepFor(status: AuthState["status"]): AuthStep | undefined {
   switch (status) {
+    case "needs_mfa_selection":
     case "needs_mfa":
       return "mfa";
     case "needs_email_verification":
